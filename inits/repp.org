@@ -1,0 +1,789 @@
+#+TITLE: My personal Emacs configuration
+#+AUTHOR: repp.el
+#+STARTUP: showeverything
+#+OPTIONS: toc:nil num:nil todo:nil
+
+* Custom variables [3/3]
+** DONE Font sizes
+
+#+BEGIN_SRC emacs-lisp
+;;
+;; DEFAULT FONT SIZES
+;;
+(setq ar-font-size 240)
+(setq ar-line-height 10)
+(setq ar-zoom 1.5)
+#+END_SRC
+
+** DONE Folders
+
+#+BEGIN_SRC emacs-lisp
+(setq ar-confidential-dir "~/Confidential")
+(setq ar-shared-dir "~/Shared")
+(setq org-directory (concat ar-confidential-dir "/Organising/tasks"))
+(setq org-default-notes-file (concat org-directory "/refile.org"))
+#+END_SRC
+
+** DONE Work
+
+#+BEGIN_SRC emacs-lisp
+(setq user-full-name "[name]"
+      user-mail-address "[email]")
+#+END_SRC
+
+* Startup [3/3]
+** DONE Scratch message
+
+#+BEGIN_SRC emacs-lisp
+(setq inhibit-splash-screen t
+      inhibit-startup-message t
+      initial-major-mode 'text-mode
+
+      ar-scratch-message "\
+  # source: http://chris.com/ascii/
+
+                     __
+                   .'  '.
+                  :      :
+                  | _  _ |
+               .-.|(o)(o)|.-.        _._          _._
+              ( ( | .--. | ) )     .',_ '.      .' _.'.
+               '-/ (    ) \\-'     / /' `\\ \\ __ / /' `\\ \\
+                /   '--'   \\     / /     \\.'  './     \\ \\
+                \\ `\"====\"` /     `-`     : _  _ :      `-`
+                 `\\      /'              |(o)(o)|
+                   `\\  /'                |      |
+                   /`-.-`\\_             /        \\
+             _..:;\\._/V\\_./:;.._       /   .--.   \\
+           .'/;:;:;\\ /^\\ /:;:;:\\'.     |  (    )  |
+          / /;:;:;:;\\| |/:;:;:;:\\ \\    _\\  '--'  /__
+     jgs / /;:;:;:;:;\\_/:;:;:;:;:\\ \\ .'  '-.__.-'   `-.
+
+  "
+      initial-scratch-message ar-scratch-message)
+
+;; Helpful: https://www.emacswiki.org/emacs/CodeSplashScreen
+(with-current-buffer (get-buffer "*scratch*")
+  (erase-buffer)
+  (when initial-scratch-message
+    (insert initial-scratch-message))
+  (set-buffer-modified-p nil))
+#+END_SRC
+
+** DONE Defaults [3/3]
+
+*** DONE Sane defaults
+(This section is adapted from [[https://github.com/danielmai/.emacs.d/blob/master/config.org][Daniel Mai's Emacs configuration]].)
+
+#+BEGIN_QUOTE
+Sources for this section include [[https://github.com/magnars/.emacs.d/blob/master/settings/sane-defaults.el][Magnars Sveen]] and [[http://pages.sachachua.com/.emacs.d/Sacha.html][Sacha Chua]].
+#+END_QUOTE
+
+#+BEGIN_SRC emacs-lisp
+(put 'downcase-region 'disabled nil)
+(put 'upcase-region 'disabled nil)
+(put 'narrow-to-region 'disabled nil)
+(put 'dired-find-alternate-file 'disabled nil)
+;; Answering just 'y' or 'n' will do
+(defalias 'yes-or-no-p 'y-or-n-p)
+;; UTF-8 please
+(setq locale-coding-system 'utf-8) ; pretty
+(set-terminal-coding-system 'utf-8) ; pretty
+(set-keyboard-coding-system 'utf-8) ; pretty
+(set-selection-coding-system 'utf-8) ; please
+(prefer-coding-system 'utf-8) ; with sugar on top
+(setq-default indent-tabs-mode nil)
+(setq-default indent-tabs-mode nil)
+(setq-default indicate-empty-lines t)
+;; Don't count two spaces after a period as the end of a sentence.
+;; Just one space is needed.
+(setq sentence-end-double-space nil)
+;; delete the region when typing, just like as we expect nowadays.
+(delete-selection-mode t)
+(show-paren-mode t)
+(column-number-mode t)
+(global-visual-line-mode)
+(setq uniquify-buffer-name-style 'forward)
+;; -i gets alias definitions from .bash_profile
+(setq shell-command-switch "-ic")
+#+END_SRC
+
+*** DONE Page break lines
+
+(This section is adapted from [[https://github.com/danielmai/.emacs.d/blob/master/config.org][Daniel Mai's Emacs configuration]].)
+
+#+BEGIN_QUOTE
+Here we make page-break characters look pretty, instead of appearing
+as =^L= in Emacs. [[http://ericjmritz.name/2015/08/29/using-page-breaks-in-gnu-emacs/][Here's an informative article called "Using
+Page-Breaks in GNU Emacs" by Eric J. M. Ritz.]]
+#+END_QUOTE
+
+#+BEGIN_SRC emacs-lisp
+(use-package page-break-lines
+  :ensure t)
+#+END_SRC
+
+*** DONE TAB key
+
+Default is 4 spaces for each TAB.
+
+#+BEGIN_SRC emacs-lisp
+(setq tab-width 4
+      indent-tabs-mode nil)
+#+END_SRC
+
+** DONE Backup
+
+(This section is adapted from [[https://github.com/danielmai/.emacs.d/blob/master/config.org][Daniel Mai's Emacs configuration]].)
+
+#+BEGIN_SRC emacs-lisp
+;; Keep all backup and auto-save files in one directory
+(setq backup-directory-alist '(("." . "~/Backup/emacs")))
+(setq auto-save-file-name-transforms '((".*" "~/Backup/emacs/autosave" t)))
+#+END_SRC
+
+* Customisation [4/6]
+
+(This section is adapted from [[https://github.com/danielmai/.emacs.d/blob/master/config.org][Daniel Mai's Emacs configuration]].)
+
+** DONE General configuration
+(This section is adapted from [[https://github.com/danielmai/.emacs.d/blob/master/config.org][Daniel Mai's Emacs configuration]].)
+
+#+BEGIN_QUOTE
+There are configurations to make when running Emacs on OS X (hence the
+"darwin" system-type check).
+#+END_QUOTE
+
+#+BEGIN_SRC emacs-lisp
+(when (string-equal system-type "darwin")
+  ;; delete files by moving them to the trash
+  (setq delete-by-moving-to-trash t)
+  (setq trash-directory "~/.Trash")
+  ;; Don't make new frames when opening a new file with Emacs
+  (setq ns-pop-nup-frames nil)
+  ;; Fullscreen!
+  (setq ns-use-native-fullscreen nil) ; Not Lion style
+  (bind-key "<s-return>" 'toggle-frame-fullscreen)
+  ;; unset f11 for the same:
+  (global-unset-key (kbd "<f11>"))
+  (defun open-dir-in-finder ()
+    "Open a new Finder window to the path of the current buffer"
+    (interactive)
+    (start-process "mai-open-dir-process" nil "open" "."))
+  (bind-key "C-c o f" 'open-dir-in-finder)
+  ;; Not going to use these commands
+  (put 'ns-print-buffer 'disabled t)
+  (put 'suspend-frame 'disabled t))
+#+END_SRC
+
+** DONE Anti-aliasing
+
+Read about it [[https://www.emacswiki.org/emacs/EmacsForMacOS][here]]. (It is the default, but just making sure ...)
+
+#+BEGIN_SRC emacs-lisp
+(setq mac-allow-anti-aliasing t)
+#+END_SRC
+
+** DONE Command-line
+
+(This section is adapted from [[https://github.com/danielmai/.emacs.d/blob/master/config.org][Daniel Mai's Emacs configuration]].)
+
+Reference: https://github.com/purcell/exec-path-from-shell
+
+#+BEGIN_QUOTE
+~exec-path-from-shell~ makes the command-line path with Emacs's shell
+match the same one on OS X.
+#+END_QUOTE
+
+#+BEGIN_SRC emacs-lisp
+(use-package exec-path-from-shell
+  :if (memq window-system '(mac ns))
+  :ensure t
+  :init
+  (exec-path-from-shell-copy-env "PYTHONPATH")
+  (exec-path-from-shell-initialize)
+)
+#+END_SRC
+
+** TODO Spellchecker & thesaurus [1/2]
+
+*** DONE Spellchecker (aspell)
+
+#+BEGIN_SRC emacs-lisp
+(if (eq system-type 'darwin)
+    ;; (setq-default ispell-program-name "/opt/Homebrew/bin/aspell")) ;; Homebrew
+    (setq-default ispell-program-name "/usr/local/bin/aspell"))
+(setq-default ispell-list-command "list")
+#+END_SRC
+
+*** TODO Synonyms
+
+This doesn't work yet.
+
+#+BEGIN_SRC emacs-lisp
+(use-package powerthesaurus
+  :ensure t)
+#+END_SRC
+
+** TODO Misc
+
+*** DONE Blinking cursor
+
+#+BEGIN_SRC emacs-lisp
+;; Keep the blinking cursor
+(blink-cursor-mode t)
+#+END_SRC
+
+*** DONE Visible bell
+
+#+BEGIN_SRC emacs-lisp
+(defun my-terminal-visible-bell ()
+  (invert-face 'mode-line)
+  (run-with-timer 0.1 nil 'invert-face 'mode-line))
+(setq visible-bell nil
+      ring-bell-function #'my-terminal-visible-bell)
+#+END_SRC
+
+*** DONE Text: Highlight, clipboard, etc.
+
+#+BEGIN_SRC emacs-lisp
+;; highlight current cursor line
+(global-hl-line-mode 1)
+;; overwrite selected text
+(delete-selection-mode t)
+;; make sure clipboard integration is active
+(setq x-select-enable-clipboard t)
+;; show line numbers
+(global-linum-mode 1)
+(setq linum-format "%4d: ")
+(global-visual-line-mode 1)
+;; show matching parenthesis
+(show-paren-mode 1)
+#+END_SRC
+
+*** DONE Smooth scrolling
+
+(This section is adapted from [[https://github.com/danielmai/.emacs.d/blob/master/config.org][Daniel Mai's Emacs configuration]].)
+
+#+BEGIN_QUOTE
+This makes it so ~C-n~-ing and ~C-p~-ing won't make the buffer jump
+around so much.
+#+END_QUOTE
+
+#+BEGIN_SRC emacs-lisp
+(use-package smooth-scrolling
+  :ensure t)
+#+END_SRC
+
+#+BEGIN_SRC emacs-lisp
+(setq mouse-wheel-scroll-amount (quote (0.01)))
+#+END_SRC
+
+*** DONE Nyan mode
+
+#+BEGIN_SRC emacs-lisp
+(use-package nyan-mode
+  :ensure t
+  :init (nyan-mode 1)
+  (setq nyan-minimum-window-width 70)
+  (setq nyan-wavy-trail t)
+  (nyan-start-animation)
+  )
+#+END_SRC
+
+** DONE Themes etc. [2/2]
+*** DONE Themes [1/1]
+
+**** DONE Cyberpunk
+
+(This section is adapted from [[https://github.com/danielmai/.emacs.d/blob/master/config.org][Daniel Mai's Emacs configuration]].)
+
+#+BEGIN_QUOTE
+The [[https://github.com/n3mo/cyberpunk-theme.el][cyberpunk theme]] is dark and colorful. However, I don't like the boxes around the mode line.
+#+END_QUOTE
+
+#+BEGIN_SRC emacs-lisp
+(use-package cyberpunk-theme
+  :if (window-system)
+  :ensure t
+  :init
+  (progn
+    (load-theme 'cyberpunk t)
+    (set-face-attribute 'default nil
+      :family "Source Code Pro"
+      :height ar-font-size
+      :weight 'normal
+      :box nil)
+    (set-face-attribute `mode-line nil
+      :box nil)
+    (set-face-attribute `mode-line-inactive nil
+      :box nil)
+    )
+)
+#+END_SRC
+
+*** DONE Colours [5/5]
+**** DONE Update line highlight colours
+
+#+BEGIN_SRC emacs-lisp
+;; Current line
+(custom-set-faces
+ '(highlight
+   ((t (:foreground nil :background "#101025"))))
+ )
+#+END_SRC
+
+**** DONE Update org code block background
+
+#+BEGIN_SRC emacs-lisp
+;; Org-mode code block
+;; Region
+(custom-set-faces
+ '(org-block-begin-line
+   ((t (:foreground "#008ED1" :background "#151515"))))
+ '(org-block
+   ((t (:background "#101010"))))
+ '(org-block-end-line
+   ((t (:foreground "#008ED1" :background "#151515"))))
+ )
+#+END_SRC
+
+**** DONE Update region background colour
+
+#+BEGIN_SRC emacs-lisp
+(custom-set-faces
+ '(region
+   ((t (:background "#453D40"))))
+ )
+#+END_SRC
+
+**** DONE Overwrite org statistics colours
+
+#+BEGIN_SRC emacs-lisp
+(set-face-attribute `org-checkbox-statistics-done nil :box nil)
+(set-face-attribute `org-checkbox-statistics-todo nil :box nil)
+#+END_SRC
+
+**** DONE Overwrite text colours
+
+References:
+- Flyspell: [[https://stackoverflow.com/questions/39425726/how-to-disable-color-in-flyspell-emacs][This post]]
+- Org keywords: [[http://orgmode.org/manual/Faces-for-TODO-keywords.html#Faces-for-TODO-keywords][Org mode documentation]]
+
+#+BEGIN_SRC emacs-lisp
+  ;; Highlight Symbol
+  (setq highlight-symbol-foreground-color "#E32636") ;; very bright red: Alizarin Crimson
+  (setq highlight-symbol-colors
+        (quote ("#000015" "#002505" "#051505" "#251505" "#351505" "#451505")))
+  ;; Org TODO keywords
+  ;; colours: http://www.colorpicker.com/color-chart/
+  ;; very bright red: "#E32636" ;; Alizarin Crimson
+  ;; light red: #CC9393
+  ;; light green: #AFD8AF
+  (setq org-todo-keyword-faces
+        (quote (("TODO" . org-warning)
+                ("TO-READ" . org-warning)
+                ("REVIEW" . org-warning)
+                ("READING" :foreground "yellow" :weight bold)
+                ("IN-PROGRESS" :foreground "yellow" :weight bold)
+                ("ONGOING" :foreground "yellow" :weight bold)
+                ("ON-HOLD" :foreground "#999999" :weight bold) ;; Grey
+                ("DELEGATED" :foreground "#FF9966" :weight bold) ;; Atomic Tangerine
+                ("WAITING" :foreground "#FF9966" :weight bold) ;; Atomic Tangerine
+                ("APPROVED" :foreground "" :weight bold) ;; light green                
+                ("ARCHIVED" :foreground "#AFD8AF" :weight bold) ;; light green
+                ("CANCELLED" :foreground "#AFD8AF" :weight bold) ;; light green
+                ("DONE" :foreground "#AFD8AF" :weight bold) ;; light green
+                ("READ" :foreground "#AFD8AF" :weight bold) ;; light green
+                ("REJECTED" :foreground "#AFD8AF" :weight bold) ;; light green
+                )
+               )
+        )
+#+END_SRC
+
+*** DONE Fonts [4/4]
+**** DONE Org mode faces
+
+#+BEGIN_SRC emacs-lisp
+(custom-set-faces
+ '(org-level-1 ((t (:inherit outline-1 :height 1.0))))
+ '(org-level-2 ((t (:inherit outline-2 :height 1.0))))
+ '(org-level-3 ((t (:inherit outline-3 :height 1.0))))
+ '(org-level-4 ((t (:inherit outline-4 :height 1.0))))
+ '(org-level-5 ((t (:inherit outline-5 :height 1.0)))))
+#+END_SRC
+
+* Functionality [3/5]
+** DONE Helm: Navigating between buffers
+
+(This section is adapted from [[https://github.com/danielmai/.emacs.d/blob/master/config.org][Daniel Mai's Emacs configuration]].)
+
+#+BEGIN_SRC emacs-lisp
+(use-package helm
+  :ensure t
+  :if (window-system)
+  :init (progn
+          (require 'helm-config)
+          (use-package helm-projectile
+            :ensure t
+            :commands helm-projectile
+            :bind ("C-x p" . helm-projectile))
+          (use-package helm-ag :defer 10  :ensure t)
+          (setq helm-locate-command "mdfind -interpret -name %s %s"
+                helm-ff-newfile-prompt-p nil
+                helm-M-x-fuzzy-match t)
+          (setq helm-buffers-fuzzy-matching t
+                helm-recentf-fuzzy-match    t)
+          (helm-mode)
+          (use-package helm-swoop
+            :ensure t
+            :bind (("M-s" . helm-swoop))
+            )
+          )
+  :bind (("C-x C-f" . helm-find-files)
+         ("C-x b" . helm-mini)
+         ("M-x" . helm-M-x)
+         ("M-y" . helm-show-kill-ring)
+         ("C-`" . helm-resume)
+         )
+  )
+#+END_SRC
+
+** DONE Auto complete
+
+Reference: https://github.com/auto-complete/auto-complete.
+
+#+BEGIN_SRC emacs-lisp
+(use-package auto-complete
+  :ensure t
+  :config
+  (ac-config-default)
+  (setq ac-auto-start nil) ;; nil or t
+  ;; (ac-set-trigger-key "TAB")
+  (setq ac-auto-show-menu 1)
+  (define-key ac-completing-map "\M-/" 'ac-stop)
+  (setq ac-ignore-case nil)
+  (setq ac-menu-height 5)
+  (set-face-background 'ac-candidate-face "lightgray")
+  (set-face-underline 'ac-candidate-face "darkgray")
+  (set-face-background 'ac-selection-face "steelblue")
+  ;; (add-to-list 'ac-modes 'org-mode)
+  ;; This doesn't seem to be working ...
+  (add-hook 'org-mode-hook
+            (lambda ()
+              (make-local-variable 'ac-stop-words)
+              (add-to-list 'ac-stop-words "*")
+              (add-to-list 'ac-stop-words "<")
+              (add-to-list 'ac-stop-words "{")
+              (add-to-list 'ac-stop-words "[")
+              (add-to-list 'ac-stop-words " ")
+              )
+            )
+) 
+#+END_SRC
+
+** TODO Search [3/5]
+
+*** TODO Swiper
+
+Reference: https://cestlaz.github.io/posts/using-emacs-6-swiper/.
+
+Not sure if Swiper is really better than Helm-swoop (currently using M-s).
+
+#+BEGIN_SRC emacs-lisp
+;; it looks like counsel is a requirement for swiper
+(use-package counsel
+  :ensure t
+  )
+
+(use-package swiper
+  :ensure try
+  :config
+  (progn
+    (ivy-mode 1)
+    (setq ivy-use-virtual-buffers t)
+    )
+  :bind (("C-s" . swiper))
+  )
+#+END_SRC
+
+*** TODO Multi-occur
+
+This is taken from Mickey Petersen's [[https://masteringemacs.org/article/searching-buffers-occur-mode][Mastering Emacs]] blog.
+
+#+BEGIN_SRC emacs-lisp
+(defun get-buffers-matching-mode (mode)
+  "Returns a list of buffers where their major-mode is equal to MODE"
+  (let ((buffer-mode-matches '()))
+   (dolist (buf (buffer-list))
+     (with-current-buffer buf
+       (if (eq mode major-mode)
+           (add-to-list 'buffer-mode-matches buf))))
+   buffer-mode-matches))
+
+(defun multi-occur-in-this-mode ()
+  "Show all lines matching REGEXP in buffers with this major mode."
+  (interactive)
+  (multi-occur
+   (get-buffers-matching-mode major-mode)
+   (car (occur-read-primary-args))))
+#+END_SRC
+
+*** DONE Move line up/down
+
+Reference: https://emacsredux.com/blog/2013/04/02/move-current-line-up-or-down/
+
+#+BEGIN_SRC emacs-lisp
+(defun move-line-up ()
+  "Move up the current line."
+  (interactive)
+  (transpose-lines 1)
+  (forward-line -2)
+  (indent-according-to-mode))
+
+(defun move-line-down ()
+  "Move down the current line."
+  (interactive)
+  (forward-line 1)
+  (transpose-lines 1)
+  (forward-line -1)
+  (indent-according-to-mode))
+#+END_SRC
+
+*** DONE Highlight symbol
+
+Reference: [[https://github.com/nschum/highlight-symbol.el]].
+
+#+BEGIN_SRC emacs-lisp
+(use-package highlight-symbol
+  :ensure t
+  :bind (("M-S M-H" . highlight-symbol-at-point)
+         ("M-S M-N" . highlight-symbol-next)
+         ("M-S M-P" . highlight-symbol-prev)
+         ("M-S M-G" . highlight-symbol-remove-all)
+        )
+  )
+#+END_SRC
+
+*** DONE Ace Jump
+
+#+BEGIN_SRC emacs-lisp
+;; First unbind C-j from org mode key map
+;; (define-key org-mode-map (kbd "C-c C-j") nil)
+;; Then configure ace jump package
+(use-package ace-jump-mode
+  :ensure t
+  :if (window-system)
+  :config
+  '(synosaurus-choose-and-replace popup)
+  :bind (("C-c j" . ace-jump-char-mode)
+         )
+  )
+#+END_SRC
+
+#+RESULTS:
+: ace-jump-char-mode
+
+** TODO On-the-fly checking
+
+Source: [[http://github.com/izahn/dotemacs/][This tutorial]].
+
+#+BEGIN_SRC emacs-lisp
+(setq flyspell-issue-welcome-flag nil)
+;; enable on-the-fly spell checking
+(add-hook 'text-mode-hook
+          (lambda ()
+            (flyspell-mode 1)))
+;; prevent flyspell from finding mistakes in the code
+(add-hook 'prog-mode-hook
+          (lambda ()
+            ;; `ispell-comments-and-strings'
+            (flyspell-prog-mode)))
+;; ispell should not check code blocks in org mode
+(add-to-list 'ispell-skip-region-alist '(":\\(PROPERTIES\\|LOGBOOK\\):" . ":END:"))
+(add-to-list 'ispell-skip-region-alist '("#\\+BEGIN_SRC" . "#\\+END_SRC"))
+(add-to-list 'ispell-skip-region-alist '("#\\+begin_src" . "#\\+end_src"))
+#+END_SRC
+
+** DONE Editing [1/1]
+*** DONE Duplicate line
+
+I would like to be able to duplicate lines and/or regions.
+Reference: [[https://rejeep.github.io/emacs/elisp/2010/03/11/duplicate-current-line-or-region-in-emacs.html][here]].
+
+#+BEGIN_SRC emacs-lisp
+(defun duplicate-current-line-or-region (arg)
+  "Duplicates the current line or region ARG times.
+If there's no region, the current line will be duplicated. However, if
+there's a region, all lines that region covers will be duplicated."
+  (interactive "p")
+  (let (beg end (origin (point)))
+    (if (and mark-active (> (point) (mark)))
+        (exchange-point-and-mark))
+    (setq beg (line-beginning-position))
+    (if mark-active
+        (exchange-point-and-mark))
+    (setq end (line-end-position))
+    (let ((region (buffer-substring-no-properties beg end)))
+      (dotimes (i arg)
+        (goto-char end)
+        (newline)
+        (insert region)
+        (setq end (point)))
+      (goto-char (+ origin (* (length region) arg) arg)))))
+#+END_SRC
+
+*** DONE Insert space after point
+
+Reference: https://stackoverflow.com/questions/24783792/how-to-insert-space-after-cursor
+
+#+BEGIN_SRC emacs-lisp
+(global-unset-key (kbd "M-o"))
+(defun my-insert-space-after-point ()
+  (interactive)
+  (save-excursion (insert " ")))
+(global-set-key (kbd "M-o") 'my-insert-space-after-point)
+#+END_SRC
+
+* Modes [3/3]
+** DONE Org
+
+#+BEGIN_SRC emacs-lisp
+(eval-after-load "org"
+  '(require 'ox-md nil t))
+#+END_SRC
+
+#+RESULTS:
+: ox-md
+
+** DONE Markdown
+
+#+BEGIN_SRC emacs-lisp
+(use-package markdown-mode
+  :ensure t
+  :mode ("README\\.md\\'" . gfm-mode)
+  :init (setq markdown-command "multimarkdown"))
+#+END_SRC
+
+** DONE Python
+
+#+BEGIN_SRC emacs-lisp
+  (use-package elpy
+    :ensure t
+    :defer t
+    :init
+    (advice-add 'python-mode :before 'elpy-enable)
+    (setq elpy-rpc-virtualenv-path "~/Python/.venv")
+    (setq python-shell-completion-native-enable nil)
+    (setenv "WORKON_HOME" "~/Python/.venv")
+    :bind (("M-[" . python-indent-shift-left)
+           ("M-]" . python-indent-shift-right))
+    )
+#+END_SRC
+
+* Additional keybindings [4/4]
+** DONE Navigation
+*** DONE Move line up/down
+
+#+BEGIN_SRC emacs-lisp
+(global-set-key (kbd "M-p")  'move-line-up)
+(global-set-key (kbd "M-n")  'move-line-down)
+#+END_SRC
+
+*** DONE Shrink & enlarge windows
+
+Adapted from the excellent '[[https://masteringemacs.org/article/my-emacs-keybindings][Mastering Emacs]]' blog. Petersen uses a combination of the S-C- (SHIFT & CONTROL) modifier keys. I will go with s- (SUPER) instead.
+
+#+BEGIN_SRC emacs-lisp
+(bind-key "s-<up>" 'shrink-window)
+(bind-key "s-<down>" 'enlarge-window)
+(bind-key "s-<right>" 'enlarge-window-horizontally)
+(bind-key "s-<left>" 'shrink-window-horizontally)
+(bind-key "C-M-<up>" 'shrink-window)
+(bind-key "C-M-<down>" 'enlarge-window)
+(bind-key "C-M-<right>" 'enlarge-window-horizontally)
+(bind-key "C-M-<left>" 'shrink-window-horizontally)
+#+END_SRC
+
+*** DONE Switching buffers
+
+(This section is adapted from [[https://github.com/danielmai/.emacs.d/blob/master/config.org][Daniel Mai's Emacs configuration]].)
+
+#+BEGIN_SRC emacs-lisp
+  (when (string-equal system-type "darwin")
+    (bind-key "C-M-[" 'previous-buffer)
+    (bind-key "C-M-]" 'next-buffer)
+  )
+#+END_SRC
+
+** DONE Functionalaity
+*** DONE Dublicate line and/or region
+
+I use 'C-c d' to dublicate a line, even though I keep using 'C-c C-d' accidentally, which is associated with inserting a date in Org-mode.
+
+#+BEGIN_SRC emacs-lisp
+(global-set-key (kbd "C-c d") 'duplicate-current-line-or-region)
+#+END_SRC
+
+*** DONE iSpell
+
+#+BEGIN_SRC emacs-lisp
+(global-unset-key (kbd "M-$"))
+(global-set-key (kbd "C-M-4") 'ispell-pdict-save)
+(global-set-key (kbd "M-4") 'ispell-word)
+#+END_SRC
+
+#+RESULTS:
+: ispell-word
+
+*** TODO Powerthesaurus
+
+#+BEGIN_SRC emacs-lisp
+(global-set-key (kbd "M-5") 'powerthesaurus-lookup-dwim)
+#+END_SRC
+
+** DONE File management
+*** DONE Rename file
+
+#+BEGIN_SRC emacs-lisp
+(global-set-key (kbd "s-r") 'rename-file)
+#+END_SRC
+
+*** DONE List of recent files (recentf)
+
+#+BEGIN_SRC emacs-lisp
+(global-set-key (kbd "C-x r") 'helm-recentf)
+#+END_SRC
+
+** DONE Mac-specific
+[[https://www.wisdomandwonder.com/article/10146/every-emacser-can-use-hyper-on-every-usb-hid-keyboard][
+This tutorial]] was instructive. The idea is to free up some modifier keys; I also have to free the right ALT key to access international characters on a UK Mac keyboard.
+
+#+BEGIN_SRC emacs-lisp
+;; free right-ALT key (to access international characters)
+(when (eq system-type 'darwin)
+      (global-set-key (kbd "A-3") (progn (print "#")))
+      (global-set-key (kbd "C-c p") (progn (print "#")))
+    )
+#+END_SRC
+
+Again, referring to [[https://www.wisdomandwonder.com/article/10146/every-emacser-can-use-hyper-on-every-usb-hid-keyboard][this tutorial]], it is possible to change modifier keys for Emacs only. (With the added benefit that the Mac keyboard replicates a standard IBM Model M type keyboard.) This also allocates Emacs SUPER & HYPER keys. (The HYPER key should have already been associated with the ~~FN key~~ RIGHT COMMAND key; as shown in the above section adapted from [[https://github.com/danielmai/.emacs.d/blob/master/config.org][Daniel Mai's Emacs configuration]].)
+
+Read more here:
+- https://www.reddit.com/r/emacs/comments/4cvu8m/how_do_you_guys_set_up_your_keys_in_os_x/
+- http://emacsredux.com/blog/2013/11/12/a-crazy-productivity-boost-remap-return-to-control/ (mapping 'return' to 'right ctrl')
+
+#+BEGIN_SRC emacs-lisp
+(when (eq system-type 'darwin)
+  (setq ns-right-command-modifier 'hyper)
+  ;; COMMAND becomes the META key in Emacs
+  (setq ns-command-modifier 'meta)
+  ;; OPTION becomes the SUPER key in Emacs
+  (setq ns-option-modifier 'super)
+  ;; The RIGHT OPTION modifier key is deactivated to allow for access to special characters
+  (setq ns-right-option-modifier 'alt)
+  ;; I have set the CAPS LOCK key as the CTRL modifier key in OSX
+  ;; CTRL stays as the CONTROL key in Emacs
+  (setq ns-control-modifier 'control)
+  )
+#+END_SRC
