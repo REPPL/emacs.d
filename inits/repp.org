@@ -716,7 +716,7 @@ Adapted from the excellent '[[https://masteringemacs.org/article/my-emacs-keybin
   )
 #+END_SRC
 
-** DONE Functionalaity
+** DONE Functionality
 *** DONE Dublicate line and/or region
 
 I use 'C-c d' to dublicate a line, even though I keep using 'C-c C-d' accidentally, which is associated with inserting a date in Org-mode.
