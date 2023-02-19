@@ -645,6 +645,23 @@ Reference: https://stackoverflow.com/questions/24783792/how-to-insert-space-afte
 (global-set-key (kbd "M-o") 'my-insert-space-after-point)
 #+END_SRC
 
+** TODO Snippets
+
+#+BEGIN_SRC emacs-lisp
+  (use-package yasnippet
+    :ensure t
+    :hook ((text-mode
+            markdown-mode
+            python-mode
+            org-mode
+            ) . yas-minor-mode-on)
+    :init
+    (setq yas-snippet-dir "~/.emacs.d/snippets"))
+#+END_SRC
+
+#+RESULTS:
+| yas-minor-mode-on |
+
 * Modes [3/3]
 ** DONE Org
 
@@ -756,8 +773,10 @@ I use 'C-c d' to dublicate a line, even though I keep using 'C-c C-d' accidental
 #+END_SRC
 
 ** DONE Mac-specific
-[[https://www.wisdomandwonder.com/article/10146/every-emacser-can-use-hyper-on-every-usb-hid-keyboard][
-This tutorial]] was instructive. The idea is to free up some modifier keys; I also have to free the right ALT key to access international characters on a UK Mac keyboard.
+
+Download first: [[https://irreal.org/blog/?p=259][Emacs Keybindings for Mac OS X]].
+
+[[https://www.wisdomandwonder.com/article/10146/every-emacser-can-use-hyper-on-every-usb-hid-keyboard][This tutorial]] was instructive. The idea is to free up some modifier keys; I also have to free the right ALT key to access international characters on a UK Mac keyboard.
 
 #+BEGIN_SRC emacs-lisp
 ;; free right-ALT key (to access international characters)
