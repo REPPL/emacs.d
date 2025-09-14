@@ -4,8 +4,12 @@
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
  '(package-selected-packages
-   '(markdown-mode powerthesaurus cyberpunk-theme synosaurus exec-path-from-shell page-break-lines elpy ace-jump-mode highlight-symbol try counsel auto-complete helm-swoop helm-ag helm-projectile helm smooth-scrolling nyan-mode use-package)))
+   '(poly-markdown markdown-mode powerthesaurus cyberpunk-theme synosaurus exec-path-from-shell page-break-lines elpy ace-jump-mode highlight-symbol try counsel auto-complete helm-swoop helm-ag helm-projectile helm smooth-scrolling nyan-mode use-package)))
 (custom-set-faces
+ ;; custom-set-faces was added by Custom.
+ ;; If you edit it by hand, you could mess it up, so be careful.
+ ;; Your init file should contain only one such instance.
+ ;; If there is more than one, they won't work right.
  '(highlight ((t (:foreground nil :background "#101025"))))
  '(org-block ((t (:background "#101010"))))
  '(org-block-begin-line ((t (:foreground "#008ED1" :background "#151515"))))

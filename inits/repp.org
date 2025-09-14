@@ -645,6 +645,23 @@ Reference: https://stackoverflow.com/questions/24783792/how-to-insert-space-afte
 (global-set-key (kbd "M-o") 'my-insert-space-after-point)
 #+END_SRC
 
+*** DONE Neo Tree
+
+Reference: https://github.com/jaypei/emacs-neotree.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package neotree
+    :ensure t
+    :config
+    (global-set-key [f8] 'neotree-toggle)
+    (setq neo-theme (if (display-graphic-p) 'icons 'arrow))    
+  ) 
+#+END_SRC
+
+#+RESULTS:
+: t
+
+
 ** TODO Snippets
 
 #+BEGIN_SRC emacs-lisp
@@ -675,12 +692,24 @@ Reference: https://stackoverflow.com/questions/24783792/how-to-insert-space-afte
 
 ** DONE Markdown
 
+See also: https://plantarum.ca/2021/10/03/emacs-tutorial-rmarkdown/
+
 #+BEGIN_SRC emacs-lisp
-(use-package markdown-mode
-  :ensure t
-  :mode ("README\\.md\\'" . gfm-mode)
-  :init (setq markdown-command "multimarkdown"))
+    ;; (use-package poly-markdown
+    ;;   :ensure t
+    ;;   :init
+    ;;   (add-to-list 'auto-mode-alist '("\\.md" . poly-markdown-mode))
+    ;;   (add-to-list 'auto-mode-alist '("\\.Rmd" . poly-markdown-mode))
+    ;;   )
+  (use-package markdown-mode
+        :ensure t
+        ;; (setq markdown-code-block-braces t)
+        :mode ("README\\.[rR]md\\'" . gfm-mode)
+        ;; :mode ("README\\.Rmd\\'" . gfm-mode)
+        :init (setq markdown-command "multimarkdown"))
 #+END_SRC
+
+#+RESULTS:
 
 ** DONE Python
 
