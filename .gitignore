@@ -1,12 +1,26 @@
-# Compiled
+# Ignore everything by default
+/*
+
+# Allow specific files and directories
+!.gitignore
+!init.el
+!README.md
+!LICENSE
+
+# Allow img directory and its contents
+!img/
+
+# Allow inits directory but be selective about contents
+!inits/
+inits/*
+!inits/custom.el
+!inits/repp.org
+
+# Specifically exclude repp.el even though inits/* would catch it
+inits/repp.el
+
+# Standard Emacs ignores
 *.elc
-
-# Packaging
-.cask
-
-# Backup files
 *~
-
-# Undo-tree save-files
 *.~undo-tree
 .DS_Store
