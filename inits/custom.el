@@ -3,8 +3,10 @@
  ;; If you edit it by hand, you could mess it up, so be careful.
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
+ '(org-agenda-files
+   '("~/Library/CloudStorage/OneDrive-RoyalHollowayUniversityofLondon/Business Futures/Research programmes/PhD--topics/phd--topics.org"))
  '(package-selected-packages
-   '(poly-markdown markdown-mode powerthesaurus cyberpunk-theme synosaurus exec-path-from-shell page-break-lines elpy ace-jump-mode highlight-symbol try counsel auto-complete helm-swoop helm-ag helm-projectile helm smooth-scrolling nyan-mode use-package)))
+   '(eldoc-box symbol-overlay ein jupyter treesit-auto lsp-treemacs yasnippet pyvenv neotree projectile lsp-mode flycheck treemacs-magit treemacs-icons-dired treemacs-projectile treemacs python-docstring conda python-pytest py-isort python-black dap-mode lsp-pyright python-mode org-bullets lsp-ui all-the-icons-dired dired-single magit consult marginalia orderless vertico quarto-mode company cyberpunk-theme synosaurus exec-path-from-shell page-break-lines elpy ace-jump-mode highlight-symbol try counsel auto-complete helm-swoop helm-ag helm-projectile helm smooth-scrolling nyan-mode use-package)))
 (custom-set-faces
  ;; custom-set-faces was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.

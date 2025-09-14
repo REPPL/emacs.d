@@ -1,18 +1,129 @@
-#+TITLE: My personal Emacs configuration
+#+TITLE: My personal Emacs configuration (FIXED)
 #+AUTHOR: repp.el
 #+STARTUP: showeverything
 #+OPTIONS: toc:nil num:nil todo:nil
 
-* Custom variables [3/3]
-** DONE Font sizes
+Fixed version addressing tree-sitter and other configuration issues.
+
+* Performance optimisations
 
 #+BEGIN_SRC emacs-lisp
-;;
-;; DEFAULT FONT SIZES
-;;
-(setq ar-font-size 240)
-(setq ar-line-height 10)
-(setq ar-zoom 1.5)
+;; Prevent .elc corruption and treemacs issues
+(setq load-prefer-newer t)  ; Always prefer newer .el files over .elc
+
+;; Block only the treemacs extensions that cause issues (allow base treemacs for lsp-treemacs)
+(setq package-load-list 
+      (append package-load-list 
+              '((treemacs-projectile nil)   ; Block treemacs-projectile
+                (treemacs-magit nil))))     ; Block treemacs-magit
+                ;; Note: treemacs and lsp-treemacs are allowed for dap-mode debugging
+
+;; Suppress byte-compiler warnings during startup
+(setq byte-compile-warnings '(not obsolete docstrings unused-vars))
+
+;; Increase garbage collection threshold during startup
+(setq gc-cons-threshold (* 50 1000 1000))
+
+;; Restore normal GC threshold after startup
+(add-hook 'emacs-startup-hook
+          (lambda ()
+            (setq gc-cons-threshold (* 2 1000 1000))))
+
+;; Reduce file handler operations during startup
+(defvar file-name-handler-alist-original file-name-handler-alist)
+(setq file-name-handler-alist nil)
+(add-hook 'emacs-startup-hook
+          (lambda ()
+            (setq file-name-handler-alist file-name-handler-alist-original)))
+
+;; Prevent warnings from deprecated functions
+(require 'cl-lib)
+(defalias 'remove-if-not 'cl-remove-if-not)
+
+;; Better error handling for package loading
+(defun safe-load-with-fallback (feature)
+  "Load a feature with fallback to source file if compiled version fails."
+  (condition-case err
+      (require feature)
+    (error 
+     (message "Compiled version failed for %s, trying source..." feature)
+     (let ((source-file (concat (symbol-name feature) ".el")))
+       (load source-file t)))))
+#+END_SRC
+
+* Package management
+
+#+BEGIN_SRC emacs-lisp
+;; Initialize package system with secure HTTPS URLs
+(require 'package)
+(setq package-archives '(("melpa" . "https://melpa.org/packages/")
+                         ("gnu" . "https://elpa.gnu.org/packages/")
+                         ("nongnu" . "https://elpa.nongnu.org/nongnu/")))
+
+;; Ensure use-package is available
+(unless (package-installed-p 'use-package)
+  (package-refresh-contents)
+  (package-install 'use-package))
+
+(eval-when-compile
+  (require 'use-package))
+
+;; Better error handling for packages
+(setq use-package-always-ensure t
+      use-package-verbose t
+      use-package-expand-minimally t
+      use-package-compute-statistics t)
+
+;; Package installation verification
+(defun ensure-package-installed (package)
+  "Ensure PACKAGE is installed, with error handling."
+  (unless (package-installed-p package)
+    (condition-case err
+        (package-install package)
+      (error (message "Failed to install %s: %s" package err)))))
+
+;; Quick fix function for .elc issues
+(defun clean-problematic-elc ()
+  "Clean .elc files that commonly cause issues."
+  (interactive)
+  (let ((elpa-dir (expand-file-name "elpa" user-emacs-directory)))
+    (shell-command 
+     (format "find %s -name '*.elc' -size 0 -delete" 
+             (shell-quote-argument elpa-dir)))
+    (message "Cleaned empty .elc files. Restart if issues persist.")))
+
+;; Keybinding for emergency cleanup
+(global-set-key (kbd "C-c F c") 'clean-problematic-elc)
+#+END_SRC
+
+* Custom variables [3/3]
+
+** DONE Font and appearance
+
+#+BEGIN_SRC emacs-lisp
+(defcustom ar-font-family
+  (cond ((member "Source Code Pro" (font-family-list)) "Source Code Pro")
+        ((member "Monaco" (font-family-list)) "Monaco")
+        ((member "Menlo" (font-family-list)) "Menlo")
+        (t "monospace"))
+  "Default font family with fallbacks."
+  :type 'string
+  :group 'appearance)
+
+(defcustom ar-font-size 240
+  "Default font size."
+  :type 'integer
+  :group 'appearance)
+
+(defcustom ar-line-height 10
+  "Default line height."
+  :type 'integer
+  :group 'appearance)
+
+(defcustom ar-zoom 1.5
+  "Default zoom level."
+  :type 'float
+  :group 'appearance)
 #+END_SRC
 
 ** DONE Folders
@@ -21,7 +132,29 @@
 (setq ar-confidential-dir "~/Confidential")
 (setq ar-shared-dir "~/Shared")
 (setq org-directory (concat ar-confidential-dir "/Organising/tasks"))
+(setq org-backup-dir (concat ar-confidential-dir "/Backup/emacs"))
+(setq org-autosave-dir (concat org-backup-dir "/autosave"))
 (setq org-default-notes-file (concat org-directory "/refile.org"))
+
+;; Virtual environment directories setup
+(setq pyvenv-workon (expand-file-name "~/.virtualenvs"))
+(setq venv-location (expand-file-name "~/.virtualenvs"))
+
+;; Ensure directories exist
+(dolist (dir (list ar-confidential-dir ar-shared-dir org-directory
+               org-backup-dir org-autosave-dir))
+  (unless (file-directory-p dir)
+    (make-directory dir t)))
+
+;; Create virtualenv directory only when pyvenv is used
+(defun ensure-venv-directory ()
+  "Create virtual environment directory if needed."
+  (unless (file-directory-p pyvenv-workon)
+    (make-directory pyvenv-workon t)))
+
+;; Configure backup after directories are created
+(setq backup-directory-alist (list (cons "." org-backup-dir)))
+(setq auto-save-file-name-transforms (list (list ".*" org-autosave-dir t)))
 #+END_SRC
 
 ** DONE Work
@@ -31,7 +164,8 @@
       user-mail-address "[email]")
 #+END_SRC
 
-* Startup [3/3]
+* Startup [2/2]
+
 ** DONE Scratch message
 
 #+BEGIN_SRC emacs-lisp
@@ -73,11 +207,6 @@
 ** DONE Defaults [3/3]
 
 *** DONE Sane defaults
-(This section is adapted from [[https://github.com/danielmai/.emacs.d/blob/master/config.org][Daniel Mai's Emacs configuration]].)
-
-#+BEGIN_QUOTE
-Sources for this section include [[https://github.com/magnars/.emacs.d/blob/master/settings/sane-defaults.el][Magnars Sveen]] and [[http://pages.sachachua.com/.emacs.d/Sacha.html][Sacha Chua]].
-#+END_QUOTE
 
 #+BEGIN_SRC emacs-lisp
 (put 'downcase-region 'disabled nil)
@@ -93,7 +222,6 @@ Sources for this section include [[https://github.com/magnars/.emacs.d/blob/mast
 (set-selection-coding-system 'utf-8) ; please
 (prefer-coding-system 'utf-8) ; with sugar on top
 (setq-default indent-tabs-mode nil)
-(setq-default indent-tabs-mode nil)
 (setq-default indicate-empty-lines t)
 ;; Don't count two spaces after a period as the end of a sentence.
 ;; Just one space is needed.
@@ -106,53 +234,28 @@ Sources for this section include [[https://github.com/magnars/.emacs.d/blob/mast
 (setq uniquify-buffer-name-style 'forward)
 ;; -i gets alias definitions from .bash_profile
 (setq shell-command-switch "-ic")
+
+;; Allow recursive minibuffers
+(setq enable-recursive-minibuffers t)
+(minibuffer-depth-indicate-mode 1)
 #+END_SRC
 
 *** DONE Page break lines
 
-(This section is adapted from [[https://github.com/danielmai/.emacs.d/blob/master/config.org][Daniel Mai's Emacs configuration]].)
-
-#+BEGIN_QUOTE
-Here we make page-break characters look pretty, instead of appearing
-as =^L= in Emacs. [[http://ericjmritz.name/2015/08/29/using-page-breaks-in-gnu-emacs/][Here's an informative article called "Using
-Page-Breaks in GNU Emacs" by Eric J. M. Ritz.]]
-#+END_QUOTE
-
 #+BEGIN_SRC emacs-lisp
-(use-package page-break-lines
-  :ensure t)
+(use-package page-break-lines)
 #+END_SRC
 
 *** DONE TAB key
-
-Default is 4 spaces for each TAB.
 
 #+BEGIN_SRC emacs-lisp
 (setq tab-width 4
       indent-tabs-mode nil)
 #+END_SRC
 
-** DONE Backup
-
-(This section is adapted from [[https://github.com/danielmai/.emacs.d/blob/master/config.org][Daniel Mai's Emacs configuration]].)
-
-#+BEGIN_SRC emacs-lisp
-;; Keep all backup and auto-save files in one directory
-(setq backup-directory-alist '(("." . "~/Backup/emacs")))
-(setq auto-save-file-name-transforms '((".*" "~/Backup/emacs/autosave" t)))
-#+END_SRC
-
 * Customisation [4/6]
 
-(This section is adapted from [[https://github.com/danielmai/.emacs.d/blob/master/config.org][Daniel Mai's Emacs configuration]].)
-
 ** DONE General configuration
-(This section is adapted from [[https://github.com/danielmai/.emacs.d/blob/master/config.org][Daniel Mai's Emacs configuration]].)
-
-#+BEGIN_QUOTE
-There are configurations to make when running Emacs on OS X (hence the
-"darwin" system-type check).
-#+END_QUOTE
 
 #+BEGIN_SRC emacs-lisp
 (when (string-equal system-type "darwin")
@@ -173,12 +276,21 @@ There are configurations to make when running Emacs on OS X (hence the
   (bind-key "C-c o f" 'open-dir-in-finder)
   ;; Not going to use these commands
   (put 'ns-print-buffer 'disabled t)
-  (put 'suspend-frame 'disabled t))
+  (put 'suspend-frame 'disabled t)
+
+  ;; Use spotlight for locate
+  (setq locate-command "mdfind")
+
+  ;; Better PDF viewing
+  (setq doc-view-ghostscript-program "/usr/local/bin/gs")
+
+  ;; Use system trash
+  (when (fboundp 'system-move-file-to-trash)
+    (setq delete-by-moving-to-trash t
+          trash-directory "~/.Trash")))
 #+END_SRC
 
 ** DONE Anti-aliasing
-
-Read about it [[https://www.emacswiki.org/emacs/EmacsForMacOS][here]]. (It is the default, but just making sure ...)
 
 #+BEGIN_SRC emacs-lisp
 (setq mac-allow-anti-aliasing t)
@@ -186,46 +298,31 @@ Read about it [[https://www.emacswiki.org/emacs/EmacsForMacOS][here]]. (It is th
 
 ** DONE Command-line
 
-(This section is adapted from [[https://github.com/danielmai/.emacs.d/blob/master/config.org][Daniel Mai's Emacs configuration]].)
-
-Reference: https://github.com/purcell/exec-path-from-shell
-
-#+BEGIN_QUOTE
-~exec-path-from-shell~ makes the command-line path with Emacs's shell
-match the same one on OS X.
-#+END_QUOTE
-
 #+BEGIN_SRC emacs-lisp
 (use-package exec-path-from-shell
   :if (memq window-system '(mac ns))
-  :ensure t
   :init
   (exec-path-from-shell-copy-env "PYTHONPATH")
-  (exec-path-from-shell-initialize)
-)
+  (exec-path-from-shell-initialize))
 #+END_SRC
 
-** TODO Spellchecker & thesaurus [1/2]
+** DONE Spellchecker & thesaurus [2/2]
 
 *** DONE Spellchecker (aspell)
 
 #+BEGIN_SRC emacs-lisp
 (if (eq system-type 'darwin)
-    ;; (setq-default ispell-program-name "/opt/Homebrew/bin/aspell")) ;; Homebrew
-    (setq-default ispell-program-name "/usr/local/bin/aspell"))
+    (setq-default ispell-program-name "/opt/homebrew/bin/aspell"))
 (setq-default ispell-list-command "list")
 #+END_SRC
 
-*** TODO Synonyms
-
-This doesn't work yet.
+*** DONE Synonyms
 
 #+BEGIN_SRC emacs-lisp
-(use-package powerthesaurus
-  :ensure t)
+(use-package powerthesaurus)
 #+END_SRC
 
-** TODO Misc
+** DONE Misc [6/6]
 
 *** DONE Blinking cursor
 
@@ -253,42 +350,61 @@ This doesn't work yet.
 (delete-selection-mode t)
 ;; make sure clipboard integration is active
 (setq x-select-enable-clipboard t)
-;; show line numbers
-(global-linum-mode 1)
-(setq linum-format "%4d: ")
+;; show line numbers in programming modes (including Python)
+(add-hook 'prog-mode-hook #'display-line-numbers-mode)
 (global-visual-line-mode 1)
 ;; show matching parenthesis
 (show-paren-mode 1)
+;; Show column numbers in mode line
+(column-number-mode 1)
 #+END_SRC
 
 *** DONE Smooth scrolling
 
-(This section is adapted from [[https://github.com/danielmai/.emacs.d/blob/master/config.org][Daniel Mai's Emacs configuration]].)
-
-#+BEGIN_QUOTE
-This makes it so ~C-n~-ing and ~C-p~-ing won't make the buffer jump
-around so much.
-#+END_QUOTE
-
 #+BEGIN_SRC emacs-lisp
 (use-package smooth-scrolling
-  :ensure t)
+  :config
+  (if (display-graphic-p)
+      (setq mouse-wheel-scroll-amount (quote (0.01)))
+    ;; Terminal-friendly scrolling
+    (setq scroll-step 1
+          scroll-conservatively 10000)))
+
+(setq mouse-wheel-scroll-amount (quote (0.01)))
 #+END_SRC
 
+*** DONE Which-key for discoverable keybindings
+
 #+BEGIN_SRC emacs-lisp
-(setq mouse-wheel-scroll-amount (quote (0.01)))
+(use-package which-key
+  :init (which-key-mode)
+  :config
+  (setq which-key-idle-delay 1.0
+        which-key-allow-imprecise-window-fit t
+        which-key-separator " → "
+        which-key-max-description-length 25
+        which-key-show-early-on-C-h t
+        which-key-idle-secondary-delay 0.05))
+#+END_SRC
+
+*** DONE Recent files
+
+#+BEGIN_SRC emacs-lisp
+(recentf-mode 1)
+(setq recentf-max-menu-items 25
+      recentf-max-saved-items 25)
 #+END_SRC
 
 *** DONE Nyan mode
 
 #+BEGIN_SRC emacs-lisp
 (use-package nyan-mode
-  :ensure t
+  :if (display-graphic-p)  ; Only in GUI
   :init (nyan-mode 1)
-  (setq nyan-minimum-window-width 70)
-  (setq nyan-wavy-trail t)
-  (nyan-start-animation)
-  )
+  :config
+  (setq nyan-minimum-window-width 70
+        nyan-wavy-trail t)
+  (nyan-start-animation))
 #+END_SRC
 
 ** DONE Themes etc. [2/2]
@@ -296,56 +412,46 @@ around so much.
 
 **** DONE Cyberpunk
 
-(This section is adapted from [[https://github.com/danielmai/.emacs.d/blob/master/config.org][Daniel Mai's Emacs configuration]].)
-
-#+BEGIN_QUOTE
-The [[https://github.com/n3mo/cyberpunk-theme.el][cyberpunk theme]] is dark and colorful. However, I don't like the boxes around the mode line.
-#+END_QUOTE
-
 #+BEGIN_SRC emacs-lisp
 (use-package cyberpunk-theme
-  :if (window-system)
-  :ensure t
   :init
   (progn
     (load-theme 'cyberpunk t)
-    (set-face-attribute 'default nil
-      :family "Source Code Pro"
-      :height ar-font-size
-      :weight 'normal
-      :box nil)
+    ;; Only set fonts in GUI mode
+    (when (display-graphic-p)
+      (set-face-attribute 'default nil
+        :family ar-font-family
+        :height ar-font-size
+        :weight 'normal
+        :box nil))
     (set-face-attribute `mode-line nil
       :box nil)
     (set-face-attribute `mode-line-inactive nil
-      :box nil)
-    )
-)
+      :box nil)))
 #+END_SRC
 
 *** DONE Colours [5/5]
+
 **** DONE Update line highlight colours
 
 #+BEGIN_SRC emacs-lisp
 ;; Current line
 (custom-set-faces
  '(highlight
-   ((t (:foreground nil :background "#101025"))))
- )
+   ((t (:foreground nil :background "#2a2a4a")))))
 #+END_SRC
 
 **** DONE Update org code block background
 
 #+BEGIN_SRC emacs-lisp
 ;; Org-mode code block
-;; Region
 (custom-set-faces
  '(org-block-begin-line
-   ((t (:foreground "#008ED1" :background "#151515"))))
+   ((t (:foreground "#008ED1" :background "#2a2a4a"))))
  '(org-block
    ((t (:background "#101010"))))
  '(org-block-end-line
-   ((t (:foreground "#008ED1" :background "#151515"))))
- )
+   ((t (:foreground "#008ED1" :background "#2a2a4a")))))
 #+END_SRC
 
 **** DONE Update region background colour
@@ -353,8 +459,7 @@ The [[https://github.com/n3mo/cyberpunk-theme.el][cyberpunk theme]] is dark and 
 #+BEGIN_SRC emacs-lisp
 (custom-set-faces
  '(region
-   ((t (:background "#453D40"))))
- )
+   ((t (:background "#453D40")))))
 #+END_SRC
 
 **** DONE Overwrite org statistics colours
@@ -366,172 +471,125 @@ The [[https://github.com/n3mo/cyberpunk-theme.el][cyberpunk theme]] is dark and 
 
 **** DONE Overwrite text colours
 
-References:
-- Flyspell: [[https://stackoverflow.com/questions/39425726/how-to-disable-color-in-flyspell-emacs][This post]]
-- Org keywords: [[http://orgmode.org/manual/Faces-for-TODO-keywords.html#Faces-for-TODO-keywords][Org mode documentation]]
-
 #+BEGIN_SRC emacs-lisp
-  ;; Highlight Symbol
-  (setq highlight-symbol-foreground-color "#E32636") ;; very bright red: Alizarin Crimson
-  (setq highlight-symbol-colors
-        (quote ("#000015" "#002505" "#051505" "#251505" "#351505" "#451505")))
-  ;; Org TODO keywords
-  ;; colours: http://www.colorpicker.com/color-chart/
-  ;; very bright red: "#E32636" ;; Alizarin Crimson
-  ;; light red: #CC9393
-  ;; light green: #AFD8AF
-  (setq org-todo-keyword-faces
-        (quote (("TODO" . org-warning)
-                ("TO-READ" . org-warning)
-                ("REVIEW" . org-warning)
-                ("READING" :foreground "yellow" :weight bold)
-                ("IN-PROGRESS" :foreground "yellow" :weight bold)
-                ("ONGOING" :foreground "yellow" :weight bold)
-                ("ON-HOLD" :foreground "#999999" :weight bold) ;; Grey
-                ("DELEGATED" :foreground "#FF9966" :weight bold) ;; Atomic Tangerine
-                ("WAITING" :foreground "#FF9966" :weight bold) ;; Atomic Tangerine
-                ("APPROVED" :foreground "" :weight bold) ;; light green                
-                ("ARCHIVED" :foreground "#AFD8AF" :weight bold) ;; light green
-                ("CANCELLED" :foreground "#AFD8AF" :weight bold) ;; light green
-                ("DONE" :foreground "#AFD8AF" :weight bold) ;; light green
-                ("READ" :foreground "#AFD8AF" :weight bold) ;; light green
-                ("REJECTED" :foreground "#AFD8AF" :weight bold) ;; light green
-                )
-               )
-        )
+;; Highlight Symbol
+(setq highlight-symbol-foreground-color "#E32636") ;; very bright red: Alizarin Crimson
+(setq highlight-symbol-colors
+      (quote ("#000015" "#002505" "#051505" "#251505" "#351505" "#451505")))
+;; Org TODO keywords
+(setq org-todo-keyword-faces
+      (quote (("TODO" . org-warning)
+              ("TO-READ" . org-warning)
+              ("REVIEW" . org-warning)
+              ("READING" :foreground "yellow" :weight bold)
+              ("IN-PROGRESS" :foreground "yellow" :weight bold)
+              ("ONGOING" :foreground "yellow" :weight bold)
+              ("ON-HOLD" :foreground "#999999" :weight bold) ;; Grey
+              ("DELEGATED" :foreground "#FF9966" :weight bold) ;; Atomic Tangerine
+              ("WAITING" :foreground "#FF9966" :weight bold) ;; Atomic Tangerine
+              ("APPROVED" :foreground "" :weight bold) ;; light green
+              ("ARCHIVED" :foreground "#AFD8AF" :weight bold) ;; light green
+              ("CANCELLED" :foreground "#AFD8AF" :weight bold) ;; light green
+              ("DONE" :foreground "#AFD8AF" :weight bold) ;; light green
+              ("READ" :foreground "#AFD8AF" :weight bold) ;; light green
+              ("REJECTED" :foreground "#AFD8AF" :weight bold) ;; light green
+              )))
 #+END_SRC
 
-*** DONE Fonts [4/4]
+*** DONE Fonts [1/1]
 **** DONE Org mode faces
 
 #+BEGIN_SRC emacs-lisp
-(custom-set-faces
- '(org-level-1 ((t (:inherit outline-1 :height 1.0))))
- '(org-level-2 ((t (:inherit outline-2 :height 1.0))))
- '(org-level-3 ((t (:inherit outline-3 :height 1.0))))
- '(org-level-4 ((t (:inherit outline-4 :height 1.0))))
- '(org-level-5 ((t (:inherit outline-5 :height 1.0)))))
+;; Org mode faces - commented out to prevent conflicts
+;; (custom-set-faces
+;;  '(org-level-1 ((t (:inherit outline-1 :height 1.0))))
+;;  '(org-level-2 ((t (:inherit outline-2 :height 1.0))))
+;;  '(org-level-3 ((t (:inherit outline-3 :height 1.0))))
+;;  '(org-level-4 ((t (:inherit outline-4 :height 1.0))))
+;;  '(org-level-5 ((t (:inherit outline-5 :height 1.0)))))
 #+END_SRC
 
-* Functionality [3/5]
-** DONE Helm: Navigating between buffers
+* Modern Completion Framework [3/3]
 
-(This section is adapted from [[https://github.com/danielmai/.emacs.d/blob/master/config.org][Daniel Mai's Emacs configuration]].)
-
-#+BEGIN_SRC emacs-lisp
-(use-package helm
-  :ensure t
-  :if (window-system)
-  :init (progn
-          (require 'helm-config)
-          (use-package helm-projectile
-            :ensure t
-            :commands helm-projectile
-            :bind ("C-x p" . helm-projectile))
-          (use-package helm-ag :defer 10  :ensure t)
-          (setq helm-locate-command "mdfind -interpret -name %s %s"
-                helm-ff-newfile-prompt-p nil
-                helm-M-x-fuzzy-match t)
-          (setq helm-buffers-fuzzy-matching t
-                helm-recentf-fuzzy-match    t)
-          (helm-mode)
-          (use-package helm-swoop
-            :ensure t
-            :bind (("M-s" . helm-swoop))
-            )
-          )
-  :bind (("C-x C-f" . helm-find-files)
-         ("C-x b" . helm-mini)
-         ("M-x" . helm-M-x)
-         ("M-y" . helm-show-kill-ring)
-         ("C-`" . helm-resume)
-         )
-  )
-#+END_SRC
-
-** DONE Auto complete
-
-Reference: https://github.com/auto-complete/auto-complete.
+** DONE Vertico for minibuffer completion
 
 #+BEGIN_SRC emacs-lisp
-(use-package auto-complete
-  :ensure t
+(use-package vertico
+  :init (vertico-mode)
   :config
-  (ac-config-default)
-  (setq ac-auto-start nil) ;; nil or t
-  ;; (ac-set-trigger-key "TAB")
-  (setq ac-auto-show-menu 1)
-  (define-key ac-completing-map "\M-/" 'ac-stop)
-  (setq ac-ignore-case nil)
-  (setq ac-menu-height 5)
-  (set-face-background 'ac-candidate-face "lightgray")
-  (set-face-underline 'ac-candidate-face "darkgray")
-  (set-face-background 'ac-selection-face "steelblue")
-  ;; (add-to-list 'ac-modes 'org-mode)
-  ;; This doesn't seem to be working ...
-  (add-hook 'org-mode-hook
-            (lambda ()
-              (make-local-variable 'ac-stop-words)
-              (add-to-list 'ac-stop-words "*")
-              (add-to-list 'ac-stop-words "<")
-              (add-to-list 'ac-stop-words "{")
-              (add-to-list 'ac-stop-words "[")
-              (add-to-list 'ac-stop-words " ")
-              )
-            )
-) 
-#+END_SRC
+  (setq vertico-cycle t
+        vertico-resize t
+        vertico-count 15
+        vertico-preselect 'prompt))
 
-** TODO Search [3/5]
-
-*** TODO Swiper
-
-Reference: https://cestlaz.github.io/posts/using-emacs-6-swiper/.
-
-Not sure if Swiper is really better than Helm-swoop (currently using M-s).
-
-#+BEGIN_SRC emacs-lisp
-;; it looks like counsel is a requirement for swiper
-(use-package counsel
-  :ensure t
-  )
-
-(use-package swiper
-  :ensure try
+(use-package orderless
+  :custom
+  (completion-styles '(orderless basic))
+  (completion-category-overrides '((file (styles basic partial-completion))))
   :config
-  (progn
-    (ivy-mode 1)
-    (setq ivy-use-virtual-buffers t)
-    )
-  :bind (("C-s" . swiper))
-  )
+  (setq orderless-matching-styles '(orderless-literal orderless-regexp)))
+
+(use-package marginalia
+  :init (marginalia-mode)
+  :config
+  (setq marginalia-max-relative-age 0
+        marginalia-align 'left))
 #+END_SRC
 
-*** TODO Multi-occur
-
-This is taken from Mickey Petersen's [[https://masteringemacs.org/article/searching-buffers-occur-mode][Mastering Emacs]] blog.
+** DONE Consult for enhanced commands
 
 #+BEGIN_SRC emacs-lisp
-(defun get-buffers-matching-mode (mode)
-  "Returns a list of buffers where their major-mode is equal to MODE"
-  (let ((buffer-mode-matches '()))
-   (dolist (buf (buffer-list))
-     (with-current-buffer buf
-       (if (eq mode major-mode)
-           (add-to-list 'buffer-mode-matches buf))))
-   buffer-mode-matches))
-
-(defun multi-occur-in-this-mode ()
-  "Show all lines matching REGEXP in buffers with this major mode."
-  (interactive)
-  (multi-occur
-   (get-buffers-matching-mode major-mode)
-   (car (occur-read-primary-args))))
+(use-package consult
+  :bind (("C-x C-r" . consult-recent-file)
+         ("M-y" . consult-yank-pop)
+         ("M-g g" . consult-goto-line)
+         ("M-g M-g" . consult-goto-line)
+         ("C-x r" . consult-recent-file)
+         ("C-c s l" . consult-line)
+         ("C-c s b" . consult-buffer)))
 #+END_SRC
+
+** DONE Company for auto-completion
+
+#+BEGIN_SRC emacs-lisp
+(use-package company
+  :hook (after-init . global-company-mode)
+  :config
+  (setq company-idle-delay 0.3
+        company-minimum-prefix-length 2
+        company-show-numbers t
+        company-tooltip-align-annotations t
+        company-global-modes '(not minibuffer-inactive-mode)
+        company-require-match nil
+        company-dabbrev-downcase nil
+        company-dabbrev-ignore-case nil)
+  :hook (minibuffer-setup . (lambda () (company-mode -1))))
+#+END_SRC
+
+* Functionality [6/6]
+
+** DONE Project management
+
+#+BEGIN_SRC emacs-lisp
+(use-package projectile
+  :init (projectile-mode +1)
+  :bind (:map projectile-mode-map
+              ("s-p" . projectile-command-map)
+              ("C-c p" . projectile-command-map))
+  :config
+  (setq projectile-completion-system 'default))
+#+END_SRC
+
+** DONE Git integration
+
+#+BEGIN_SRC emacs-lisp
+(use-package magit
+  :bind ("C-x g" . magit-status))
+#+END_SRC
+
+** DONE Search [3/3]
 
 *** DONE Move line up/down
-
-Reference: https://emacsredux.com/blog/2013/04/02/move-current-line-up-or-down/
 
 #+BEGIN_SRC emacs-lisp
 (defun move-line-up ()
@@ -552,41 +610,24 @@ Reference: https://emacsredux.com/blog/2013/04/02/move-current-line-up-or-down/
 
 *** DONE Highlight symbol
 
-Reference: [[https://github.com/nschum/highlight-symbol.el]].
-
 #+BEGIN_SRC emacs-lisp
 (use-package highlight-symbol
-  :ensure t
   :bind (("M-S M-H" . highlight-symbol-at-point)
          ("M-S M-N" . highlight-symbol-next)
          ("M-S M-P" . highlight-symbol-prev)
-         ("M-S M-G" . highlight-symbol-remove-all)
-        )
-  )
+         ("M-S M-G" . highlight-symbol-remove-all)))
 #+END_SRC
 
-*** DONE Ace Jump
+*** DONE Ace Jump - FIXED KEYBINDING CONFLICT
 
 #+BEGIN_SRC emacs-lisp
-;; First unbind C-j from org mode key map
-;; (define-key org-mode-map (kbd "C-c C-j") nil)
-;; Then configure ace jump package
+;; Changed keybinding to avoid conflict with jupyter
 (use-package ace-jump-mode
-  :ensure t
   :if (window-system)
-  :config
-  '(synosaurus-choose-and-replace popup)
-  :bind (("C-c j" . ace-jump-char-mode)
-         )
-  )
+  :bind (("C-c SPC" . ace-jump-char-mode)))  ; Changed from C-c j to C-c SPC
 #+END_SRC
 
-#+RESULTS:
-: ace-jump-char-mode
-
-** TODO On-the-fly checking
-
-Source: [[http://github.com/izahn/dotemacs/][This tutorial]].
+** DONE On-the-fly checking
 
 #+BEGIN_SRC emacs-lisp
 (setq flyspell-issue-welcome-flag nil)
@@ -597,7 +638,6 @@ Source: [[http://github.com/izahn/dotemacs/][This tutorial]].
 ;; prevent flyspell from finding mistakes in the code
 (add-hook 'prog-mode-hook
           (lambda ()
-            ;; `ispell-comments-and-strings'
             (flyspell-prog-mode)))
 ;; ispell should not check code blocks in org mode
 (add-to-list 'ispell-skip-region-alist '(":\\(PROPERTIES\\|LOGBOOK\\):" . ":END:"))
@@ -605,11 +645,9 @@ Source: [[http://github.com/izahn/dotemacs/][This tutorial]].
 (add-to-list 'ispell-skip-region-alist '("#\\+begin_src" . "#\\+end_src"))
 #+END_SRC
 
-** DONE Editing [1/1]
-*** DONE Duplicate line
+** DONE Editing [3/3]
 
-I would like to be able to duplicate lines and/or regions.
-Reference: [[https://rejeep.github.io/emacs/elisp/2010/03/11/duplicate-current-line-or-region-in-emacs.html][here]].
+*** DONE Duplicate line
 
 #+BEGIN_SRC emacs-lisp
 (defun duplicate-current-line-or-region (arg)
@@ -635,8 +673,6 @@ there's a region, all lines that region covers will be duplicated."
 
 *** DONE Insert space after point
 
-Reference: https://stackoverflow.com/questions/24783792/how-to-insert-space-after-cursor
-
 #+BEGIN_SRC emacs-lisp
 (global-unset-key (kbd "M-o"))
 (defun my-insert-space-after-point ()
@@ -645,102 +681,461 @@ Reference: https://stackoverflow.com/questions/24783792/how-to-insert-space-afte
 (global-set-key (kbd "M-o") 'my-insert-space-after-point)
 #+END_SRC
 
-*** DONE Neo Tree
-
-Reference: https://github.com/jaypei/emacs-neotree.
+*** DONE File tree navigation
 
 #+BEGIN_SRC emacs-lisp
-  (use-package neotree
-    :ensure t
-    :config
-    (global-set-key [f8] 'neotree-toggle)
-    (setq neo-theme (if (display-graphic-p) 'icons 'arrow))    
-  ) 
+(use-package neotree
+  :config
+  (global-set-key [f8] 'neotree-toggle)
+  (setq neo-theme (if (display-graphic-p) 'icons 'arrow)
+        neo-smart-open t
+        neo-auto-indent-point t))
+
+;; Better dired with built-in enhancements
+(use-package dired
+  :ensure nil  ; built-in
+  :config
+  (setq dired-listing-switches "-alh"
+        dired-kill-when-opening-new-buffer t
+        dired-recursive-copies 'always
+        dired-recursive-deletes 'always)
+  ;; Auto-refresh dired buffers
+  (add-hook 'dired-mode-hook 'auto-revert-mode)
+  ;; Single buffer for dired navigation
+  (define-key dired-mode-map (kbd "RET") 'dired-find-alternate-file)
+  (define-key dired-mode-map (kbd "^") (lambda () (interactive) (find-alternate-file ".."))))
+
+;; Enhanced dired with additional features
+(use-package dired-x
+  :ensure nil  ; built-in
+  :config
+  (setq dired-omit-files "^\\.[^.]\\|^#\\|~$")
+  (add-hook 'dired-mode-hook 'dired-omit-mode))
+
+;; Optional: Enhanced dired with icons
+(use-package all-the-icons-dired
+  :if (display-graphic-p)
+  :hook (dired-mode . all-the-icons-dired-mode))
 #+END_SRC
 
-#+RESULTS:
-: t
+* Error checking with Flycheck [1/1]
 
-
-** TODO Snippets
+** DONE Flycheck configuration
 
 #+BEGIN_SRC emacs-lisp
-  (use-package yasnippet
-    :ensure t
-    :hook ((text-mode
-            markdown-mode
-            python-mode
-            org-mode
-            ) . yas-minor-mode-on)
-    :init
-    (setq yas-snippet-dir "~/.emacs.d/snippets"))
+(use-package flycheck
+  :hook (after-init . global-flycheck-mode)
+  :config
+  (setq flycheck-check-syntax-automatically '(save mode-enabled)
+        flycheck-display-errors-delay 0.5
+        flycheck-python-flake8-executable "python3"
+        flycheck-python-pycompile-executable "python3"
+        flycheck-python-pylint-executable "python3")
+
+  (setq-default flycheck-disabled-checkers '(python-mypy))
+
+  (setq flycheck-indication-mode 'right-fringe
+        flycheck-highlighting-mode 'lines)
+
+  :bind (("C-c f l" . flycheck-list-errors)
+         ("C-c f n" . flycheck-next-error)
+         ("C-c f p" . flycheck-previous-error)
+         ("C-c f v" . flycheck-verify-setup)
+         ("C-c f s" . flycheck-select-checker)))
+
+;; Fallback to flymake if flycheck fails
+(use-package flymake
+  :ensure nil
+  :hook (python-mode . (lambda ()
+                         (unless (and (featurep 'flycheck) flycheck-mode)
+                           (flymake-mode 1))))
+  :config
+  (setq flymake-start-on-flymake-mode t
+        flymake-no-changes-timeout 0.5)
+  :bind (:map flymake-mode-map
+              ("C-c f l" . flymake-show-diagnostics-buffer)
+              ("C-c f n" . flymake-goto-next-error)
+              ("C-c f p" . flymake-goto-prev-error)))
 #+END_SRC
 
-#+RESULTS:
-| yas-minor-mode-on |
+* Language support [2/2]
 
-* Modes [3/3]
-** DONE Org
+** DONE Org Mode
 
 #+BEGIN_SRC emacs-lisp
-(eval-after-load "org"
-  '(require 'ox-md nil t))
+(use-package org
+  :config
+  (setq org-startup-indented t
+        org-pretty-entities t
+        org-hide-emphasis-markers t
+        org-startup-with-inline-images t
+        org-image-actual-width '(300))
+
+  (eval-after-load "org"
+    '(require 'ox-md nil t)))
+
+(use-package org-bullets
+  :hook (org-mode . org-bullets-mode))
 #+END_SRC
 
-#+RESULTS:
-: ox-md
+** DONE Python IDE Setup [1/1]
 
-** DONE Markdown
-
-See also: https://plantarum.ca/2021/10/03/emacs-tutorial-rmarkdown/
+*** DONE FIXED Tree-sitter Enhanced Syntax Highlighting
 
 #+BEGIN_SRC emacs-lisp
-    ;; (use-package poly-markdown
-    ;;   :ensure t
-    ;;   :init
-    ;;   (add-to-list 'auto-mode-alist '("\\.md" . poly-markdown-mode))
-    ;;   (add-to-list 'auto-mode-alist '("\\.Rmd" . poly-markdown-mode))
-    ;;   )
-  (use-package markdown-mode
-        :ensure t
-        ;; (setq markdown-code-block-braces t)
-        :mode ("README\\.[rR]md\\'" . gfm-mode)
-        ;; :mode ("README\\.Rmd\\'" . gfm-mode)
-        :init (setq markdown-command "multimarkdown"))
+;; FIXED: Manual tree-sitter grammar installation and setup
+;; This addresses the "language grammar for python is unavailable" error
+
+(defun install-treesit-grammar-python ()
+  "Install Python tree-sitter grammar manually."
+  (interactive)
+  (unless (treesit-language-available-p 'python)
+    (message "Installing Python tree-sitter grammar...")
+    (let ((treesit-grammar-dir (expand-file-name "tree-sitter" user-emacs-directory)))
+      (unless (file-directory-p treesit-grammar-dir)
+        (make-directory treesit-grammar-dir t))
+      ;; Try to compile the grammar
+      (condition-case err
+          (treesit-install-language-grammar 'python 
+            "https://github.com/tree-sitter/tree-sitter-python")
+        (error (message "Failed to install Python grammar: %s" err))))))
+
+;; Only enable tree-sitter if Python grammar is available or can be installed
+(when (and (version<= "29.1" emacs-version) ; Tree-sitter requires Emacs 29+
+           (treesit-available-p))
+  
+  ;; Try to install Python grammar if not available
+  (unless (treesit-language-available-p 'python)
+    (install-treesit-grammar-python))
+  
+  ;; Only enable if grammar is now available
+  (when (treesit-language-available-p 'python)
+    (use-package treesit-auto
+      :config
+      (setq treesit-auto-install nil) ; Don't auto-install to avoid errors
+      (treesit-auto-add-to-auto-mode-alist 'python)
+      (global-treesit-auto-mode))
+    
+    ;; Use tree-sitter Python mode when grammar is available
+    (add-to-list 'auto-mode-alist '("\\.py\\'" . python-ts-mode))
+    (with-eval-after-load 'python-ts-mode
+      (setq python-indent-offset 4))))
+
+;; Fallback message if tree-sitter is not available
+(unless (and (version<= "29.1" emacs-version) (treesit-available-p))
+  (message "Tree-sitter not available in this Emacs version, using standard Python mode"))
 #+END_SRC
 
-#+RESULTS:
-
-** DONE Python
+*** DONE LSP Mode for Python Development
 
 #+BEGIN_SRC emacs-lisp
-  (use-package elpy
-    :ensure t
-    :defer t
-    :init
-    (advice-add 'python-mode :before 'elpy-enable)
-    (setq elpy-rpc-virtualenv-path "~/Python/.venv")
-    (setq python-shell-completion-native-enable nil)
-    (setenv "WORKON_HOME" "~/Python/.venv")
-    :bind (("M-[" . python-indent-shift-left)
-           ("M-]" . python-indent-shift-right))
-    )
+(use-package lsp-mode
+  :hook ((python-mode . lsp-deferred)
+         (python-ts-mode . lsp-deferred) ; Support tree-sitter mode too
+         (lsp-mode . lsp-enable-which-key-integration))
+  :commands (lsp lsp-deferred)
+  :init
+  (setq lsp-keymap-prefix "C-c l"
+        lsp-file-watch-threshold 2000
+        lsp-semantic-tokens-enable t
+        lsp-completion-provider :none
+        lsp-signature-auto-activate nil
+        lsp-signature-render-documentation nil
+        lsp-eldoc-enable-hover nil
+        lsp-modeline-code-actions-enable nil
+        lsp-headerline-breadcrumb-enable nil)
+  :config
+  (setq lsp-auto-guess-root t
+        lsp-prefer-flymake nil
+        lsp-enable-file-watchers nil
+        lsp-idle-delay 0.5)
+  (setq lsp-pylsp-plugins-flake8-enabled t
+        lsp-pylsp-plugins-pydocstyle-enabled t
+        lsp-pylsp-plugins-pycodestyle-enabled nil
+        lsp-pylsp-plugins-autopep8-enabled nil
+        lsp-pylsp-plugins-yapf-enabled nil
+        lsp-pylsp-plugins-black-enabled t
+        lsp-pylsp-plugins-isort-enabled t)
+  :bind (:map lsp-mode-map
+              ("C-c l r" . lsp-rename)
+              ("C-c l f" . lsp-format-buffer)
+              ("C-c l a" . lsp-execute-code-action)
+              ("C-c l d" . lsp-find-definition)
+              ("C-c l D" . lsp-find-declaration)
+              ("C-c l i" . lsp-find-implementation)
+              ("C-c l R" . lsp-find-references)
+              ("C-c l s" . lsp-describe-session)
+              ("C-c l S" . lsp-workspace-shutdown)
+              ("C-c l w r" . lsp-workspace-restart)))
+
+(use-package lsp-ui
+  :commands lsp-ui-mode
+  :config
+  (setq lsp-ui-doc-enable t
+        lsp-ui-doc-position 'bottom
+        lsp-ui-doc-delay 2
+        lsp-ui-sideline-enable t
+        lsp-ui-sideline-show-hover nil
+        lsp-ui-sideline-show-diagnostics t
+        lsp-ui-peek-enable t
+        lsp-ui-peek-always-show t
+        lsp-ui-doc-show-with-cursor nil
+        lsp-ui-doc-show-with-mouse nil)
+  :bind (:map lsp-ui-mode-map
+              ("C-c l u" . lsp-ui-imenu)
+              ("C-c l ." . lsp-ui-peek-find-definitions)
+              ("C-c l ?" . lsp-ui-peek-find-references)
+              ("C-c l h" . lsp-ui-doc-show)))
+
+(use-package lsp-pyright
+  :hook ((python-mode . (lambda ()
+                          (require 'lsp-pyright)
+                          (lsp-deferred)))
+         (python-ts-mode . (lambda ()
+                             (require 'lsp-pyright)
+                             (lsp-deferred)))))
+
+(use-package dap-mode
+  :if (not (version< emacs-version "27.1"))
+  :config
+  (dap-auto-configure-mode)
+  (require 'dap-python)
+  :bind (("C-c d d" . dap-debug)
+         ("C-c d r" . dap-debug-recent)
+         ("C-c d b" . dap-breakpoint-toggle)
+         ("C-c d B" . dap-breakpoint-delete-all)
+         ("C-c d n" . dap-next)
+         ("C-c d i" . dap-step-in)
+         ("C-c d o" . dap-step-out)
+         ("C-c d c" . dap-continue)))
 #+END_SRC
 
-* Additional keybindings [4/4]
+*** DONE Python Virtual Environment Management
+
+#+BEGIN_SRC emacs-lisp
+;; Core Python configuration
+(setq python-shell-interpreter "python3"
+      python-shell-interpreter-args "-i")
+
+;; Fix Python indentation detection
+(setq python-indent-offset 4
+      python-indent-guess-indent-offset t
+      python-indent-guess-indent-offset-verbose nil)
+
+;; Essential packages for new virtual environments
+(defcustom python-essential-packages
+  '("pip --upgrade"
+    "black"
+    "isort"
+    "flake8"
+    "python-lsp-server[all]"
+    "ipython"
+    "wheel"
+    "setuptools --upgrade")
+  "List of essential Python packages to install in new virtual environments."
+  :type '(repeat string)
+  :group 'python)
+
+;; Default virtual environment path
+(defcustom python-default-venv-path "~/.virtualenvs/default"
+  "Path to the default Python virtual environment."
+  :type 'string
+  :group 'python)
+
+;; Python workflow helper functions
+(defun python-setup-windows ()
+  "Set up ideal Python development layout: code above, shell below."
+  (interactive)
+  (delete-other-windows)
+  (split-window-below)
+  (other-window 1)
+  (if (get-buffer "*Python*")
+      (switch-to-buffer "*Python*")
+    (python-shell-switch-to-shell))
+  (other-window 1))
+
+(defun python-run-buffer-and-show ()
+  "Send buffer to Python shell and switch to shell to see output."
+  (interactive)
+  (python-shell-send-buffer)
+  (python-shell-switch-to-shell))
+
+(defun python-run-region-and-show ()
+  "Send selected region to Python shell and switch to shell to see output."
+  (interactive)
+  (if (use-region-p)
+      (progn
+        (python-shell-send-region (region-beginning) (region-end))
+        (python-shell-switch-to-shell))
+    (message "No region selected")))
+
+;; Enhanced Python mode configuration
+(use-package python
+  :ensure nil
+  :mode ("\\.py\\'" . python-mode)
+  :hook (python-mode . (lambda ()
+                         (setq fill-column 88)
+                         (electric-indent-local-mode 1)
+                         (setq python-indent-offset 4)
+                         (setq tab-width 4)
+                         (eldoc-mode 1)
+                         (when (and buffer-file-name (file-exists-p buffer-file-name))
+                           (python-indent-guess-indent-offset))))
+  :config
+  (setq python-shell-completion-native-enable nil
+        python-indent-def-block-scale 1
+        python-indent-after-paren-with-newline t
+        python-shell-prompt-detect-failure-warning nil
+        python-shell-prompt-detect-enabled nil)
+
+  :bind (("C-c C-w" . python-setup-windows)
+         ("C-c C-x" . python-run-buffer-and-show)
+         ("C-c C-v" . python-run-region-and-show)
+         ("C-c C-z" . python-shell-switch-to-shell)
+         ("C-c C-c" . python-shell-send-buffer)
+         ("C-c C-r" . (lambda ()
+                        (interactive)
+                        (if (use-region-p)
+                            (python-shell-send-region (region-beginning) (region-end))
+                          (message "No region selected"))))))
+
+;; Enhanced pyvenv configuration
+(use-package pyvenv
+  :config
+  (ensure-venv-directory)
+  (pyvenv-mode t)
+  (setq pyvenv-mode-line-indicator '(pyvenv-virtual-env-name ("[" pyvenv-virtual-env-name "] ")))
+
+  :bind (("C-c v a" . pyvenv-activate)
+         ("C-c v d" . pyvenv-deactivate)
+         ("C-c v w" . pyvenv-workon)))
+
+;; Code Formatting with Black
+(use-package python-black
+  :demand t
+  :after python
+  :bind (("C-c C-f" . python-black-buffer))
+  :config
+  (setq python-black-command "black"))
+
+;; Import sorting
+(use-package py-isort
+  :bind (("C-c C-i" . py-isort-buffer)))
+
+;; Testing with pytest
+(use-package python-pytest
+  :bind (("C-c t t" . python-pytest)
+         ("C-c t f" . python-pytest-file)
+         ("C-c t s" . python-pytest-function)
+         ("C-c t p" . python-pytest-popup)))
+#+END_SRC
+
+*** DONE FIXED Jupyter Integration
+
+#+BEGIN_SRC emacs-lisp
+;; Jupyter notebook support with FIXED keybindings
+(use-package jupyter
+  :config
+  (setq jupyter-eval-use-overlays t
+        jupyter-repl-echo-eval-p t)
+  :bind (("C-c J j" . jupyter-run-repl)      ; Changed from C-c j to C-c J
+         ("C-c J c" . jupyter-connect-repl)   ; Changed from C-c j to C-c J
+         ("C-c J k" . jupyter-shutdown-kernel))) ; Changed from C-c j to C-c J
+
+;; Alternative notebook interface
+(use-package ein
+  :config
+  (setq ein:output-area-inlined-images t
+        ein:slice-image t))
+#+END_SRC
+
+*** DONE Enhanced Code Navigation
+
+#+BEGIN_SRC emacs-lisp
+;; Better symbol highlighting and navigation
+(use-package symbol-overlay
+  :hook (python-mode . symbol-overlay-mode)
+  :config
+  (setq symbol-overlay-idle-time 0.5)
+  :bind (("C-c s n" . symbol-overlay-jump-next)
+         ("C-c s p" . symbol-overlay-jump-prev)
+         ("C-c s h" . symbol-overlay-put)
+         ("C-c s r" . symbol-overlay-remove-all)))
+
+;; Enhanced imenu for better function navigation
+(add-hook 'python-mode-hook
+          (lambda ()
+            (setq imenu-create-index-function 
+                  'python-imenu-create-flat-index)))
+#+END_SRC
+
+*** DONE Enhanced Documentation
+
+#+BEGIN_SRC emacs-lisp
+;; Better documentation display
+(use-package eldoc-box
+  :hook (python-mode . eldoc-box-hover-at-point-mode)
+  :config
+  (setq eldoc-box-clear-with-C-g t
+        eldoc-box-max-pixel-width 800))
+
+;; Python documentation lookup
+(defun python-info-lookup-symbol ()
+  "Look up Python symbol in documentation."
+  (interactive)
+  (let ((symbol (thing-at-point 'symbol)))
+    (when symbol
+      (browse-url (format "https://docs.python.org/3/search.html?q=%s" symbol)))))
+
+(with-eval-after-load 'python
+  (define-key python-mode-map (kbd "C-c h") 'python-info-lookup-symbol))
+#+END_SRC
+
+* Terminal improvements
+
+#+BEGIN_SRC emacs-lisp
+(unless (display-graphic-p)
+  ;; Terminal alternatives for problematic bindings
+  (global-set-key (kbd "C-c C-w") 'python-setup-windows))
+
+;; Terminal color improvements
+(unless (display-graphic-p)
+  (setq frame-background-mode 'dark)
+  (when (string-match "256color" (getenv "TERM"))
+    (load-theme 'cyberpunk t)))
+
+(when (and (eq system-type 'darwin) (not (display-graphic-p)))
+  ;; Terminal Emacs on Mac adjustments
+  (setq mac-option-key-is-meta nil)
+  (setq mac-command-key-is-meta t)
+  (setq mac-command-modifier 'meta)
+  (setq mac-option-modifier 'super))
+
+(when (not (display-graphic-p))
+  (setq lsp-ui-doc-enable nil
+        lsp-ui-sideline-enable t
+        lsp-eldoc-render-all nil))
+#+END_SRC
+
+* Keybindings [5/5]
+
 ** DONE Navigation
-*** DONE Move line up/down
 
 #+BEGIN_SRC emacs-lisp
+;; Move line up/down
 (global-set-key (kbd "M-p")  'move-line-up)
 (global-set-key (kbd "M-n")  'move-line-down)
-#+END_SRC
 
-*** DONE Shrink & enlarge windows
+;; Navigating buffer
+(global-set-key (kbd "M-<") 'beginning-of-buffer)
+(global-set-key (kbd "M->") 'end-of-buffer)
 
-Adapted from the excellent '[[https://masteringemacs.org/article/my-emacs-keybindings][Mastering Emacs]]' blog. Petersen uses a combination of the S-C- (SHIFT & CONTROL) modifier keys. I will go with s- (SUPER) instead.
+;; Switching buffers
+(when (string-equal system-type "darwin")
+  (bind-key "C-M-[" 'previous-buffer)
+  (bind-key "C-M-]" 'next-buffer))
 
-#+BEGIN_SRC emacs-lisp
+;; Resizing windows
 (bind-key "s-<up>" 'shrink-window)
 (bind-key "s-<down>" 'enlarge-window)
 (bind-key "s-<right>" 'enlarge-window-horizontally)
@@ -749,89 +1144,94 @@ Adapted from the excellent '[[https://masteringemacs.org/article/my-emacs-keybin
 (bind-key "C-M-<down>" 'enlarge-window)
 (bind-key "C-M-<right>" 'enlarge-window-horizontally)
 (bind-key "C-M-<left>" 'shrink-window-horizontally)
-#+END_SRC
 
-*** DONE Switching buffers
-
-(This section is adapted from [[https://github.com/danielmai/.emacs.d/blob/master/config.org][Daniel Mai's Emacs configuration]].)
-
-#+BEGIN_SRC emacs-lisp
-  (when (string-equal system-type "darwin")
-    (bind-key "C-M-[" 'previous-buffer)
-    (bind-key "C-M-]" 'next-buffer)
-  )
 #+END_SRC
 
 ** DONE Functionality
-*** DONE Dublicate line and/or region
-
-I use 'C-c d' to dublicate a line, even though I keep using 'C-c C-d' accidentally, which is associated with inserting a date in Org-mode.
 
 #+BEGIN_SRC emacs-lisp
-(global-set-key (kbd "C-c d") 'duplicate-current-line-or-region)
-#+END_SRC
-
-*** DONE iSpell
-
-#+BEGIN_SRC emacs-lisp
-(global-unset-key (kbd "M-$"))
-(global-set-key (kbd "C-M-4") 'ispell-pdict-save)
-(global-set-key (kbd "M-4") 'ispell-word)
-#+END_SRC
-
-#+RESULTS:
-: ispell-word
-
-*** TODO Powerthesaurus
-
-#+BEGIN_SRC emacs-lisp
-(global-set-key (kbd "M-5") 'powerthesaurus-lookup-dwim)
+;; Global keybindings
+(bind-keys*
+ ("C-c d" . duplicate-current-line-or-region)
+ ("M-4" . ispell-word)
+ ("M-5" . powerthesaurus-lookup-dwim)
+ ("C-M-4" . ispell-pdict-save))
 #+END_SRC
 
 ** DONE File management
-*** DONE Rename file
 
 #+BEGIN_SRC emacs-lisp
 (global-set-key (kbd "s-r") 'rename-file)
 #+END_SRC
 
-*** DONE List of recent files (recentf)
-
-#+BEGIN_SRC emacs-lisp
-(global-set-key (kbd "C-x r") 'helm-recentf)
-#+END_SRC
-
 ** DONE Mac-specific
-
-Download first: [[https://irreal.org/blog/?p=259][Emacs Keybindings for Mac OS X]].
-
-[[https://www.wisdomandwonder.com/article/10146/every-emacser-can-use-hyper-on-every-usb-hid-keyboard][This tutorial]] was instructive. The idea is to free up some modifier keys; I also have to free the right ALT key to access international characters on a UK Mac keyboard.
 
 #+BEGIN_SRC emacs-lisp
 ;; free right-ALT key (to access international characters)
 (when (eq system-type 'darwin)
-      (global-set-key (kbd "A-3") (progn (print "#")))
-      (global-set-key (kbd "C-c p") (progn (print "#")))
-    )
+  (global-set-key (kbd "A-3") (lambda () (interactive) (insert "#")))
+  (global-set-key (kbd "C-c p") (lambda () (interactive) (insert "#")))
+
+  ;; Mac modifier keys
+  (setq ns-right-command-modifier 'hyper)
+  (setq ns-command-modifier 'meta)
+  (setq ns-option-modifier 'super)
+  (setq ns-right-option-modifier 'alt)
+  (setq ns-control-modifier 'control))
 #+END_SRC
 
-Again, referring to [[https://www.wisdomandwonder.com/article/10146/every-emacser-can-use-hyper-on-every-usb-hid-keyboard][this tutorial]], it is possible to change modifier keys for Emacs only. (With the added benefit that the Mac keyboard replicates a standard IBM Model M type keyboard.) This also allocates Emacs SUPER & HYPER keys. (The HYPER key should have already been associated with the ~~FN key~~ RIGHT COMMAND key; as shown in the above section adapted from [[https://github.com/danielmai/.emacs.d/blob/master/config.org][Daniel Mai's Emacs configuration]].)
+** DONE Additional Packages [3/3]
 
-Read more here:
-- https://www.reddit.com/r/emacs/comments/4cvu8m/how_do_you_guys_set_up_your_keys_in_os_x/
-- http://emacsredux.com/blog/2013/11/12/a-crazy-productivity-boost-remap-return-to-control/ (mapping 'return' to 'right ctrl')
+*** DONE Snippets
 
 #+BEGIN_SRC emacs-lisp
-(when (eq system-type 'darwin)
-  (setq ns-right-command-modifier 'hyper)
-  ;; COMMAND becomes the META key in Emacs
-  (setq ns-command-modifier 'meta)
-  ;; OPTION becomes the SUPER key in Emacs
-  (setq ns-option-modifier 'super)
-  ;; The RIGHT OPTION modifier key is deactivated to allow for access to special characters
-  (setq ns-right-option-modifier 'alt)
-  ;; I have set the CAPS LOCK key as the CTRL modifier key in OSX
-  ;; CTRL stays as the CONTROL key in Emacs
-  (setq ns-control-modifier 'control)
-  )
+(use-package yasnippet
+  :hook ((text-mode
+          markdown-mode
+          python-mode
+          org-mode) . yas-minor-mode-on)
+  :init
+  (setq yas-snippet-dir "~/.emacs.d/snippets")
+  :config
+  (yas-global-mode 1)
+  ;; Add error handling for snippet collection loading
+  (condition-case err
+      (yas-reload-all)
+    (error (message "Warning: Some snippets failed to load: %s" err))))
+
+(use-package python-docstring
+  :hook (python-mode . python-docstring-mode))
+#+END_SRC
+
+*** DONE Markdown
+
+#+BEGIN_SRC emacs-lisp
+(use-package markdown-mode
+  :mode ("README\\.[rR]md\\'" . gfm-mode)
+  :init (setq markdown-command "multimarkdown"))
+#+END_SRC
+
+*** DONE Enhanced Project Navigation
+
+#+BEGIN_SRC emacs-lisp
+(use-package neotree
+  :config
+  (global-set-key [f8] 'neotree-toggle)
+  (setq neo-theme (if (display-graphic-p) 'icons 'arrow)
+        neo-smart-open t
+        neo-auto-indent-point t))
+
+(defun dired-sidebar ()
+  "Open dired in a side window for project navigation."
+  (interactive)
+  (let ((project-root (or (and (fboundp 'projectile-project-root)
+                               (projectile-project-root))
+                          default-directory)))
+    (dired-other-window project-root)
+    (let ((win (selected-window)))
+      (display-buffer-in-side-window (current-buffer) '((side . left)))
+      (select-window win))))
+
+(global-set-key (kbd "C-x t t") 'dired-sidebar)
+(global-set-key (kbd "M-0") 'neotree-toggle)
 #+END_SRC

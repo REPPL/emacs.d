@@ -1,19 +1,36 @@
 ;;
 ;; Most of this init.el file is an adaptation of Daniel Mai's configuration file
-;; https://github.com/danielmai/.Emacs.d/blob/master/init.el
+;; https://github.com/danielmai/.emacs.d/blob/master/init.el
 ;;
 
 (setq gc-cons-threshold 400000000)
 
-(menu-bar-mode -1)
+;;
+;; STARTUP
+;;
+;;
+;; The first line of the init.el file seems to be speeding up the time it takes for Emacs to start ...
+;;
+;;
+;;
 
+;;
+;; Begin initialization
+;;
+;;
+;; Turn off mouse interface early in startup to avoid momentary display
+;;
+(menu-bar-mode -1)
 (when window-system
   (tool-bar-mode -1)
   (scroll-bar-mode -1)
   (tooltip-mode -1))
-
 (setq inhibit-startup-message t)
 
+;;
+;; PACKAGES
+;;
+;;
 ;; Set up package
 (require 'package)
 (setq package-archives
