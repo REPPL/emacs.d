@@ -19,13 +19,19 @@ This means `automake` is missing. If you don't have sudo access to install via H
 1. Download automake:
    ```bash
    cd ~/Downloads
-   curl -O https://ftp.gnu.org/gnu/automake/automake-1.16.5.tar.gz
+   
+   # Option A: Get latest version automatically
+   LATEST=$(curl -s https://ftp.gnu.org/gnu/automake/ | grep -oE 'automake-[0-9]+\.[0-9]+\.tar\.gz' | sort -V | tail -1)
+   curl -O https://ftp.gnu.org/gnu/automake/$LATEST
+   
+   # Option B: Specific version (if automatic fails)
+   curl -O https://ftp.gnu.org/gnu/automake/automake-1.17.tar.gz
    ```
 
 2. Extract and build:
    ```bash
-   tar -xzf automake-1.16.5.tar.gz
-   cd automake-1.16.5
+   tar -xzf automake-*.tar.gz
+   cd automake-*/
    ./configure --prefix=$HOME/.local
    make
    make install
