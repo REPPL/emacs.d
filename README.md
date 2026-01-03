@@ -1,9 +1,14 @@
 
 # emacs.d
 
+![Built with Org](https://img.shields.io/badge/Built%20with-Org%20Mode-77aa99?logo=org&logoColor=white)
+![macOS](https://img.shields.io/badge/macOS-Supported-000000?logo=apple&logoColor=white)
+![Maintained](https://img.shields.io/badge/Maintained%3F-yes-green.svg)
+![Created with Claude Code](https://img.shields.io/badge/Created%20with-Claude%20Code-8B5CF6)
+
 My personal Emacs configuration.
 
-![](./img/screenshot.png)
+![](./docs/img/screenshot.png)
 
 ## Installation
 

@@ -7,11 +7,9 @@
 !README.md
 !LICENSE
 
-# Allow img directory and its contents
-!img/
-
 # Allow docs directory and its contents
 !docs/
+!docs/*/
 
 # Allow inits directory but be selective about contents
 !inits/
