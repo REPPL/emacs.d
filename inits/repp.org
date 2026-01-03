@@ -129,32 +129,65 @@ Fixed version addressing tree-sitter and other configuration issues.
 ** DONE Folders
 
 #+BEGIN_SRC emacs-lisp
-(setq ar-confidential-dir "~/Confidential")
-(setq ar-shared-dir "~/Shared")
-(setq org-directory (concat ar-confidential-dir "/Organising/tasks"))
-(setq org-backup-dir (concat ar-confidential-dir "/Backup/emacs"))
-(setq org-autosave-dir (concat org-backup-dir "/autosave"))
-(setq org-default-notes-file (concat org-directory "/refile.org"))
+;; Define custom group for personal configuration
+(defgroup ar-config nil
+  "Personal Emacs configuration settings."
+  :group 'convenience
+  :prefix "ar-")
+
+;; User-customisable directory paths
+(defcustom ar-confidential-dir (expand-file-name "~/Confidential")
+  "Directory for confidential files."
+  :type 'directory
+  :group 'ar-config)
+
+(defcustom ar-shared-dir (expand-file-name "~/Shared")
+  "Directory for shared files."
+  :type 'directory
+  :group 'ar-config)
+
+;; Derived directories (based on ar-confidential-dir)
+(defcustom ar-org-directory (expand-file-name "Organising/tasks" ar-confidential-dir)
+  "Directory for org-mode task files."
+  :type 'directory
+  :group 'ar-config)
+
+(defcustom ar-backup-dir (expand-file-name "Backup/emacs" ar-confidential-dir)
+  "Directory for Emacs backup files."
+  :type 'directory
+  :group 'ar-config)
+
+(defcustom ar-autosave-dir (expand-file-name "autosave" ar-backup-dir)
+  "Directory for Emacs auto-save files."
+  :type 'directory
+  :group 'ar-config)
+
+(defcustom ar-venv-dir (expand-file-name "~/.virtualenvs")
+  "Directory for Python virtual environments."
+  :type 'directory
+  :group 'ar-config)
+
+;; Set org-mode variables
+(setq org-directory ar-org-directory)
+(setq org-default-notes-file (expand-file-name "refile.org" ar-org-directory))
 
 ;; Virtual environment directories setup
-(setq pyvenv-workon (expand-file-name "~/.virtualenvs"))
-(setq venv-location (expand-file-name "~/.virtualenvs"))
+(setq pyvenv-workon ar-venv-dir)
+(setq venv-location ar-venv-dir)
 
-;; Ensure directories exist
-(dolist (dir (list ar-confidential-dir ar-shared-dir org-directory
-               org-backup-dir org-autosave-dir))
-  (unless (file-directory-p dir)
-    (make-directory dir t)))
+;; Ensure all directories exist
+(defun ar-ensure-directories ()
+  "Create all configured directories if they don't exist."
+  (dolist (dir (list ar-confidential-dir ar-shared-dir ar-org-directory
+                     ar-backup-dir ar-autosave-dir ar-venv-dir))
+    (unless (file-directory-p dir)
+      (make-directory dir t))))
 
-;; Create virtualenv directory only when pyvenv is used
-(defun ensure-venv-directory ()
-  "Create virtual environment directory if needed."
-  (unless (file-directory-p pyvenv-workon)
-    (make-directory pyvenv-workon t)))
+(ar-ensure-directories)
 
 ;; Configure backup after directories are created
-(setq backup-directory-alist (list (cons "." org-backup-dir)))
-(setq auto-save-file-name-transforms (list (list ".*" org-autosave-dir t)))
+(setq backup-directory-alist (list (cons "." ar-backup-dir)))
+(setq auto-save-file-name-transforms (list (list ".*" ar-autosave-dir t)))
 #+END_SRC
 
 ** DONE Work

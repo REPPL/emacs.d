@@ -10,10 +10,12 @@
 # Allow img directory and its contents
 !img/
 
+# Allow docs directory and its contents
+!docs/
+
 # Allow inits directory but be selective about contents
 !inits/
 inits/*
-!inits/custom.el
 !inits/repp.org
 
 # Specifically exclude repp.el even though inits/* would catch it
