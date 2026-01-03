@@ -18,8 +18,9 @@
 inits/*
 !inits/repp.org
 
-# Specifically exclude repp.el even though inits/* would catch it
+# Specifically exclude auto-generated and user-specific files
 inits/repp.el
+inits/custom.el
 
 # Standard Emacs ignores
 *.elc
