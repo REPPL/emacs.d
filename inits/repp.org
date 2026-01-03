@@ -758,7 +758,7 @@ there's a region, all lines that region covers will be duplicated."
               ("C-c f p" . flymake-goto-prev-error)))
 #+END_SRC
 
-* Language support [2/2]
+* Language support [9/9]
 
 ** DONE Org Mode
 
@@ -776,6 +776,684 @@ there's a region, all lines that region covers will be duplicated."
 
 (use-package org-bullets
   :hook (org-mode . org-bullets-mode))
+#+END_SRC
+
+** DONE Academic Writing & Citations
+
+#+BEGIN_SRC emacs-lisp
+;; ============================================================
+;; Academic Writing Configuration
+;; For Org-mode, Markdown, R Markdown with LaTeX/PDF export
+;; ============================================================
+
+;; Paths
+(defvar academic-manuscripts-dir "~/Development/Sandboxed/Manuscripts/"
+  "Root directory for manuscripts repository.")
+(defvar academic-production-dir (concat academic-manuscripts-dir "template/")
+  "Template resources directory.")
+(defvar academic-csl-styles-dir (concat academic-production-dir "templates/csl/")
+  "Directory containing CSL style files.")
+(defvar academic-bib-file (concat academic-production-dir "bib/master.bib")
+  "Master bibliography file.")
+
+;; --- LaTeX/PDF Export Configuration ---
+
+(require 'ox-latex)
+
+;; Use LuaLaTeX for modern Unicode support
+(setq org-latex-compiler "lualatex")
+
+;; PDF process with Biber for bibliography
+(setq org-latex-pdf-process
+      '("lualatex -interaction nonstopmode -output-directory %o %f"
+        "biber %b"
+        "lualatex -interaction nonstopmode -output-directory %o %f"
+        "lualatex -interaction nonstopmode -output-directory %o %f"))
+
+;; Clean up auxiliary files after export
+(setq org-latex-logfiles-extensions
+      '("aux" "bcf" "blg" "fdb_latexmk" "fls" "figlist" "idx"
+        "log" "nav" "out" "ptc" "run.xml" "snm" "toc" "vrb" "xdv"
+        "bbl" "tex"))
+
+;; Allow URLs to break at any character (prevents overflow)
+(setq org-latex-default-packages-alist
+      (cons '("" "xurl" t) org-latex-default-packages-alist))
+
+;; --- Custom LaTeX Document Classes ---
+
+(add-to-list 'org-latex-classes
+             '("ieee"
+               "\\documentclass[conference]{IEEEtran}
+[NO-DEFAULT-PACKAGES]
+[PACKAGES]
+[EXTRA]"
+               ("\\section{%s}" . "\\section*{%s}")
+               ("\\subsection{%s}" . "\\subsection*{%s}")
+               ("\\subsubsection{%s}" . "\\subsubsection*{%s}")))
+
+(add-to-list 'org-latex-classes
+             '("acm"
+               "\\documentclass[sigconf,anonymous=false]{acmart}
+[NO-DEFAULT-PACKAGES]
+[PACKAGES]
+[EXTRA]"
+               ("\\section{%s}" . "\\section*{%s}")
+               ("\\subsection{%s}" . "\\subsection*{%s}")
+               ("\\subsubsection{%s}" . "\\subsubsection*{%s}")))
+
+(add-to-list 'org-latex-classes
+             '("apa"
+               "\\documentclass[man,12pt]{apa7}
+[NO-DEFAULT-PACKAGES]
+[PACKAGES]
+[EXTRA]"
+               ("\\section{%s}" . "\\section*{%s}")
+               ("\\subsection{%s}" . "\\subsection*{%s}")
+               ("\\subsubsection{%s}" . "\\subsubsection*{%s}")))
+
+(add-to-list 'org-latex-classes
+             '("article-biber"
+               "\\documentclass[12pt,a4paper]{article}
+[NO-DEFAULT-PACKAGES]
+[PACKAGES]
+[EXTRA]"
+               ("\\section{%s}" . "\\section*{%s}")
+               ("\\subsection{%s}" . "\\subsection*{%s}")
+               ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
+               ("\\paragraph{%s}" . "\\paragraph*{%s}")))
+#+END_SRC
+
+** DONE Citation Management with org-cite and CSL
+
+#+BEGIN_SRC emacs-lisp
+;; org-cite configuration (built into Org 9.5+)
+(with-eval-after-load 'oc
+  (require 'oc-csl)  ; Load CSL processor
+  ;; Use CSL for all exports (simpler, consistent)
+  (setq org-cite-export-processors
+        '((latex csl)
+          (t csl)))
+  ;; Global bibliography as fallback
+  (when (file-exists-p academic-bib-file)
+    (setq org-cite-global-bibliography (list academic-bib-file))))
+
+;; Find manuscript bibliography by searching up directory tree
+(defun academic-find-manuscript-bib (&optional file)
+  "Find references.bib by searching up from FILE (or current buffer).
+Looks for assets/bib/references.bib in parent directories.
+Also checks ../assets/bib/references.bib relative to file."
+  (let* ((source-file (or file (buffer-file-name)))
+         (dir (and source-file (file-name-directory source-file)))
+         (found nil))
+    (when dir
+      ;; First check the simple relative path ../assets/bib/references.bib
+      (let ((relative-bib (expand-file-name "../assets/bib/references.bib" dir)))
+        (when (file-exists-p relative-bib)
+          (setq found relative-bib)))
+      ;; If not found, search up directory tree
+      (unless found
+        (dotimes (_ 5)
+          (let ((candidate (expand-file-name "assets/bib/references.bib" dir)))
+            (when (file-exists-p candidate)
+              (setq found candidate)))
+          (setq dir (file-name-directory (directory-file-name dir))))))
+    found))
+
+;; Store original file for export hooks (export runs in temp buffer)
+(defvar academic--export-source-file nil
+  "Original source file path, set before export.")
+
+(defun academic-store-source-file (&rest _)
+  "Store the current buffer's file path before export."
+  (setq academic--export-source-file (buffer-file-name)))
+
+(advice-add 'org-export-dispatch :before #'academic-store-source-file)
+(advice-add 'org-export-to-file :before #'academic-store-source-file)
+(advice-add 'org-export-as :before #'academic-store-source-file)
+
+;; Check for manuscript bibliography before export
+(defun academic-check-bibliography (_backend)
+  "Check if manuscript bibliography exists, warn if not found.
+BACKEND is the export backend (ignored)."
+  (let* ((source-file (or academic--export-source-file (buffer-file-name)))
+         (local-bib (academic-find-manuscript-bib source-file))
+         (doc-bib (org-cite-list-bibliography-files))
+         (has-local (and local-bib (file-exists-p local-bib)))
+         (has-doc-bib (and doc-bib (cl-some #'file-exists-p doc-bib))))
+    (cond
+     ;; Document specifies bibliography - check it exists
+     ((and doc-bib (not has-doc-bib))
+      (warn "Bibliography file(s) not found: %s" doc-bib))
+     ;; No document bibliography and no local bib found
+     ((and (not doc-bib) (not has-local) (not org-cite-global-bibliography))
+      (warn "No bibliography found. Create assets/bib/references.bib in manuscript root."))
+     ;; Local bib exists - use it if no document bib specified
+     ((and (not doc-bib) has-local)
+      (setq-local org-cite-global-bibliography (list local-bib))
+      (message "Using manuscript bibliography: %s" local-bib)))))
+
+(add-hook 'org-export-before-processing-hook #'academic-check-bibliography)
+
+;; Auto-insert bibliography section if missing
+(defun academic-ensure-bibliography (_backend)
+  "Insert References section with PRINT_BIBLIOGRAPHY if document has citations but none.
+BACKEND is the export backend (ignored)."
+  (save-excursion
+    (goto-char (point-min))
+    ;; Check if document has citations
+    (when (re-search-forward "\\[cite" nil t)
+      ;; Check if PRINT_BIBLIOGRAPHY already exists
+      (goto-char (point-min))
+      (unless (re-search-forward "#\\+PRINT_BIBLIOGRAPHY:" nil t)
+        ;; Insert at end of buffer
+        (goto-char (point-max))
+        (insert "\n\n* References\n:PROPERTIES:\n:UNNUMBERED: t\n:END:\n\n#+PRINT_BIBLIOGRAPHY:\n")
+        (message "Auto-inserted References section with #+PRINT_BIBLIOGRAPHY:")))))
+
+(add-hook 'org-export-before-processing-hook #'academic-ensure-bibliography)
+
+;; CSL processor for org-cite
+(use-package citeproc
+  :ensure t
+  :after oc)
+
+;; CSL styles directory
+(with-eval-after-load 'oc-csl
+  (setq org-cite-csl-styles-dir academic-csl-styles-dir)
+  ;; Fix for "Wrong type argument: numberp, nil" error
+  (setq org-cite-csl-link-cites nil))
+
+;; Available citation styles (first is default)
+(defvar academic-citation-styles
+  '(("APA 7th Edition" . "apa.csl")
+    ("IEEE" . "ieee.csl")
+    ("ACM SIGCONF" . "acm-sig-proceedings.csl")
+    ("Chicago Notes (endnotes)" . "chicago-note-bibliography.csl")
+    ("Harvard" . "harvard-cite-them-right.csl")
+    ("Vancouver" . "vancouver.csl")
+    ("Nature" . "nature.csl")
+    ("Elsevier (numbered)" . "elsevier-with-titles.csl")
+    ("Springer (basic)" . "springer-basic-author-date.csl")
+    ("MLA 9th Edition" . "modern-language-association.csl")
+    ("Chicago Author-Date" . "chicago-author-date.csl")
+    ("OSCOLA (legal)" . "oscola.csl")
+    ("Bluebook (legal)" . "bluebook-inline.csl")
+    ("AMA (medical)" . "american-medical-association.csl")
+    ("ACS (chemistry)" . "american-chemical-society.csl"))
+  "Available citation styles as (name . filename) pairs.")
+
+;; Available manuscript templates (first is default)
+(defvar academic-templates
+  '(("Anonymous (blind review)" . "anonymous-base.org")
+    ("IEEE Conference" . "ieee-conference.org")
+    ("IEEE Journal" . "ieee-journal.org")
+    ("APA Journal" . "apa-journal.org")
+    ("ACM SIGCONF" . "acm-sigconf.org")
+    ("ACM Journal" . "acm-journal.org")
+    ("Chicago Endnotes (CMR)" . "chicago-endnotes.org")
+    ("Elsevier Journal" . "elsevier-journal.org")
+    ("Springer Journal" . "springer-journal.org")
+    ("PLOS ONE" . "plos-one.org")
+    ("Nature" . "nature-article.org")
+    ("Thesis Chapter" . "thesis-chapter.org")
+    ("Working Paper" . "working-paper.org")
+    ("Working Paper (Two-Column)" . "working-paper-twocol.org"))
+  "Available manuscript templates as (name . filename) pairs.")
+
+(defun academic-set-citation-style ()
+  "Interactively set citation style for current buffer.
+Inserts or updates #+CITE_EXPORT line using ~/ paths for portability."
+  (interactive)
+  (let* ((style-name (completing-read "Citation style: "
+                                      (mapcar #'car academic-citation-styles)
+                                      nil t))
+         (style-file (cdr (assoc style-name academic-citation-styles)))
+         ;; Use ~/ path for portability in documents
+         (style-path (concat "~/Development/Sandboxed/Manuscripts/template/templates/csl/" style-file))
+         (expanded-path (expand-file-name style-path)))
+    (if (not (file-exists-p expanded-path))
+        (message "Style file not found: %s" expanded-path)
+      (save-excursion
+        (goto-char (point-min))
+        (if (re-search-forward "^#\\+CITE_EXPORT:.*$" nil t)
+            (replace-match (format "#+CITE_EXPORT: csl %s" style-path))
+          ;; Insert after OPTIONS or at top
+          (goto-char (point-min))
+          (if (re-search-forward "^#\\+OPTIONS:" nil t)
+              (end-of-line)
+            (goto-char (point-min)))
+          (insert (format "\n#+CITE_EXPORT: csl %s" style-path))))
+      (message "Set citation style to: %s" style-name))))
+
+(defun academic-switch-template ()
+  "Switch to a different template style.
+Replaces preamble (everything before first heading) with template preamble,
+preserving TITLE, SUBTITLE, AUTHOR, DATE, and all content after first heading.
+Use this to change journal formats while keeping your manuscript content."
+  (interactive)
+  (let* ((template-name (completing-read "Switch to template: "
+                                         (mapcar #'car academic-templates)
+                                         nil t))
+         (template-file (cdr (assoc template-name academic-templates)))
+         (template-path (expand-file-name template-file
+                                          (concat academic-production-dir "templates/org/")))
+         template-preamble
+         ;; Save current document metadata
+         (saved-title nil)
+         (saved-subtitle nil)
+         (saved-author nil)
+         (saved-date nil))
+    (if (not (file-exists-p template-path))
+        (message "Template not found: %s" template-path)
+      ;; Extract metadata from current document
+      (save-excursion
+        (goto-char (point-min))
+        (when (re-search-forward "^#\\+TITLE:[ \t]*\\(.+\\)$" nil t)
+          (setq saved-title (match-string 1)))
+        (goto-char (point-min))
+        (when (re-search-forward "^#\\+SUBTITLE:[ \t]*\\(.+\\)$" nil t)
+          (setq saved-subtitle (match-string 1)))
+        (goto-char (point-min))
+        (when (re-search-forward "^#\\+AUTHOR:[ \t]*\\(.+\\)$" nil t)
+          (setq saved-author (match-string 1)))
+        (goto-char (point-min))
+        (when (re-search-forward "^#\\+DATE:[ \t]*\\(.+\\)$" nil t)
+          (setq saved-date (match-string 1))))
+      ;; Extract preamble from template (everything before first *)
+      (with-temp-buffer
+        (insert-file-contents template-path)
+        (goto-char (point-min))
+        (if (re-search-forward "^\\* " nil t)
+            (setq template-preamble (buffer-substring (point-min) (match-beginning 0)))
+          (setq template-preamble (buffer-string))))
+      ;; Replace current preamble
+      (save-excursion
+        (goto-char (point-min))
+        (let ((preamble-end (if (re-search-forward "^\\* " nil t)
+                                (match-beginning 0)
+                              (point-max))))
+          (delete-region (point-min) preamble-end)
+          (goto-char (point-min))
+          (insert template-preamble)))
+      ;; Restore saved metadata
+      (save-excursion
+        (when saved-title
+          (goto-char (point-min))
+          (when (re-search-forward "^#\\+TITLE:.*$" nil t)
+            (replace-match (concat "#+TITLE: " saved-title))))
+        (when saved-subtitle
+          (goto-char (point-min))
+          (if (re-search-forward "^#\\+SUBTITLE:.*$" nil t)
+              (replace-match (concat "#+SUBTITLE: " saved-subtitle))
+            ;; Insert subtitle after title if template doesn't have one
+            (goto-char (point-min))
+            (when (re-search-forward "^#\\+TITLE:.*$" nil t)
+              (end-of-line)
+              (insert "\n#+SUBTITLE: " saved-subtitle))))
+        (when saved-author
+          (goto-char (point-min))
+          (when (re-search-forward "^#\\+AUTHOR:.*$" nil t)
+            (replace-match (concat "#+AUTHOR: " saved-author))))
+        (when saved-date
+          (goto-char (point-min))
+          (when (re-search-forward "^#\\+DATE:.*$" nil t)
+            (replace-match (concat "#+DATE: " saved-date)))))
+      ;; Fix CSL path to be relative to manuscript location
+      (when buffer-file-name
+        (save-excursion
+          (goto-char (point-min))
+          (when (re-search-forward "^#\\+CITE_EXPORT:[ \t]*csl[ \t]+\\(\\.\\./csl/[^ \t\n]+\\)" nil t)
+            (let* ((csl-file (file-name-nondirectory (match-string 1)))
+                   (manuscript-dir (file-name-directory buffer-file-name))
+                   (csl-dir (concat academic-production-dir "csl/"))
+                   (rel-path (file-relative-name csl-dir manuscript-dir)))
+              (replace-match (concat "#+CITE_EXPORT: csl " rel-path csl-file))))))
+      (message "Switched to template: %s (preserved title/author/date/content)" template-name))))
+
+;; Keep old name as alias for compatibility
+(defalias 'academic-apply-template 'academic-switch-template)
+
+(defvar academic-base-preamble-file
+  (concat academic-production-dir "templates/org/base-preamble.org")
+  "Path to the base preamble file containing common LaTeX headers.")
+
+(defun academic-inject-base-preamble ()
+  "Inject base preamble into the current buffer after LATEX_COMPILER line.
+The base preamble contains common packages (booktabs, caption, hyperref, etc.)
+that are shared across all templates."
+  (when (file-exists-p academic-base-preamble-file)
+    (save-excursion
+      (goto-char (point-min))
+      ;; Check if base preamble already injected
+      (unless (re-search-forward "# Common packages" nil t)
+        ;; Find insertion point: after LATEX_COMPILER or before first LATEX_HEADER
+        (goto-char (point-min))
+        (let ((insert-point nil)
+              (base-content nil))
+          ;; Read base preamble content (skip comment lines at top)
+          (with-temp-buffer
+            (insert-file-contents academic-base-preamble-file)
+            (goto-char (point-min))
+            ;; Skip initial comment lines
+            (while (and (not (eobp))
+                        (looking-at "^#[^+]"))
+              (forward-line 1))
+            (setq base-content (buffer-substring (point) (point-max))))
+          ;; Find insertion point
+          (goto-char (point-min))
+          (if (re-search-forward "^#\\+LATEX_COMPILER:.*$" nil t)
+              (setq insert-point (point))
+            ;; Fallback: before first LATEX_HEADER
+            (goto-char (point-min))
+            (when (re-search-forward "^#\\+LATEX_HEADER:" nil t)
+              (beginning-of-line)
+              (setq insert-point (point))))
+          ;; Insert base preamble
+          (when (and insert-point base-content)
+            (goto-char insert-point)
+            (insert "\n" base-content)))))))
+
+(defun academic-new-manuscript ()
+  "Create a new manuscript from template in a new buffer."
+  (interactive)
+  (let* ((template-name (completing-read "Template: "
+                                         (mapcar #'car academic-templates)
+                                         nil t))
+         (template-file (cdr (assoc template-name academic-templates)))
+         (template-path (expand-file-name template-file
+                                          (concat academic-production-dir "templates/org/"))))
+    (if (not (file-exists-p template-path))
+        (message "Template not found: %s" template-path)
+      (switch-to-buffer (generate-new-buffer "new-manuscript.org"))
+      (org-mode)
+      (insert-file-contents template-path)
+      (academic-inject-base-preamble)
+      (goto-char (point-min))
+      (message "Created new manuscript from: %s (save with C-x C-w)" template-name))))
+
+;; Export filter to inject base preamble at export time
+(defun academic-export-inject-preamble (backend)
+  "Inject base preamble before LaTeX export.
+This allows manuscripts to stay clean while getting common packages at export."
+  (when (and (org-export-derived-backend-p backend 'latex)
+             (file-exists-p academic-base-preamble-file))
+    (academic-inject-base-preamble)))
+
+(add-hook 'org-export-before-processing-hook #'academic-export-inject-preamble)
+
+;; Convert tables with :span t to table* for two-column layouts
+;; Strategy: Track table positions with :span t, then convert those specific tables
+
+(defvar academic--span-table-positions nil
+  "List of table positions (1-indexed) that should be converted to table*.")
+
+(defun academic-track-span-tables (backend)
+  "Track which tables have :span t attribute before export."
+  (when (org-export-derived-backend-p backend 'latex)
+    (setq academic--span-table-positions nil)
+    (let ((table-num 0))
+      (goto-char (point-min))
+      ;; Find all tables and note which have :span t
+      (while (re-search-forward "^#\\+\\(CAPTION\\|NAME\\|ATTR_LATEX\\):" nil t)
+        (let ((block-start (line-beginning-position))
+              (has-span nil)
+              (is-table nil))
+          ;; Look at this block of #+LINES
+          (save-excursion
+            (goto-char block-start)
+            (while (looking-at "^#\\+")
+              (when (looking-at "^#\\+ATTR_LATEX:.*:span t")
+                (setq has-span t))
+              (forward-line 1))
+            ;; Check if followed by a table
+            (when (looking-at "^|")
+              (setq is-table t)))
+          ;; If this is a table, count it
+          (when is-table
+            (setq table-num (1+ table-num))
+            (when has-span
+              (push table-num academic--span-table-positions)))
+          ;; Move past this block
+          (while (and (not (eobp)) (looking-at "^#\\+\\|^|"))
+            (forward-line 1)))))
+    (setq academic--span-table-positions (nreverse academic--span-table-positions))))
+
+(add-hook 'org-export-before-processing-hook #'academic-track-span-tables)
+
+(defun academic-convert-tables-to-starred (text backend info)
+  "Convert specific table environments to table* based on tracked positions."
+  (if (or (not (org-export-derived-backend-p backend 'latex))
+          (null academic--span-table-positions))
+      text
+    (with-temp-buffer
+      (insert text)
+      (goto-char (point-min))
+      (let ((table-num 0))
+        (while (re-search-forward "\\\\begin{table}" nil t)
+          (setq table-num (1+ table-num))
+          (when (member table-num academic--span-table-positions)
+            (replace-match "\\\\begin{table*}")
+            (when (re-search-forward "\\\\end{table}" nil t)
+              (replace-match "\\\\end{table*}")))))
+      (buffer-string))))
+
+(add-to-list 'org-export-filter-final-output-functions
+             #'academic-convert-tables-to-starred)
+
+;; Note: Two-column abstract handling is now done purely in LaTeX
+;; via twocolumn-preamble.org (deferred \maketitle with savebox)
+
+;; Placement options help text
+(defvar academic-placement-options
+  '(("[htbp]" . "here/top/bottom/page - flexible, LaTeX decides (default)")
+    ("[p]"    . "page - own page with other floats, good for large items")
+    ("[t]"    . "top - place at top of page")
+    ("[b]"    . "bottom - place at bottom of page")
+    ("[H]"    . "HERE - force exact position (may cause gaps)"))
+  "Float placement options with descriptions.")
+
+(defun academic-read-placement ()
+  "Prompt for placement with help text."
+  (let* ((choices (mapcar (lambda (opt)
+                            (format "%-8s %s" (car opt) (cdr opt)))
+                          academic-placement-options))
+         (choice (completing-read "Placement: " choices nil t
+                                  (car choices))))
+    (car (split-string choice))))
+
+;; Insert figure scaffolding
+(defun academic-insert-figure ()
+  "Insert org-mode figure scaffolding with common LaTeX attributes."
+  (interactive)
+  (let* ((caption (read-string "Caption: "))
+         (label (read-string "Label (e.g., fig:overview): " "fig:"))
+         (path (read-string "Image path: " "../../../assets/img/"))
+         (width (read-string "Width (default 0.8): " "0.8"))
+         (placement (academic-read-placement)))
+    (insert (format "
+#+CAPTION: %s
+#+NAME: %s
+#+ATTR_LATEX: :width %s\\linewidth :placement %s
+[[%s]]
+
+" caption label width placement path))))
+
+;; Insert table scaffolding
+(defun academic-insert-table ()
+  "Insert org-mode table scaffolding with common LaTeX attributes."
+  (interactive)
+  (let* ((caption (read-string "Caption: "))
+         (label (read-string "Label (e.g., tab:results): " "tab:"))
+         (placement (academic-read-placement))
+         (font (completing-read "Font size: "
+                                '("\\normalsize" "\\small" "\\footnotesize" "\\scriptsize")
+                                nil nil "\\small"))
+         (cols (read-string "Number of columns: " "3")))
+    (insert (format "
+#+CAPTION: %s
+#+NAME: %s
+#+ATTR_LATEX: :booktabs t :font %s :placement %s :center t
+" caption label font placement))
+    ;; Insert table header
+    (let ((col-count (string-to-number cols)))
+      (insert "|")
+      (dotimes (_ col-count) (insert " Header |"))
+      (insert "\n|")
+      (dotimes (_ col-count) (insert "--------|"))
+      (insert "\n|")
+      (dotimes (_ col-count) (insert " Data   |"))
+      (insert "\n\n"))))
+
+;; Insert landscape table scaffolding (for wide tables)
+(defun academic-insert-landscape-table ()
+  "Insert org-mode table scaffolding wrapped in landscape environment."
+  (interactive)
+  (let* ((caption (read-string "Caption: "))
+         (label (read-string "Label (e.g., tab:wide-results): " "tab:"))
+         (font (completing-read "Font size: "
+                                '("\\normalsize" "\\small" "\\footnotesize" "\\scriptsize")
+                                nil nil "\\small"))
+         (cols (read-string "Number of columns: " "5")))
+    (insert "
+#+BEGIN_EXPORT latex
+\\begin{landscape}
+#+END_EXPORT
+
+")
+    (insert (format "#+CAPTION: %s
+#+NAME: %s
+#+ATTR_LATEX: :booktabs t :font %s :placement [p] :center t
+" caption label font))
+    ;; Insert table header
+    (let ((col-count (string-to-number cols)))
+      (insert "|")
+      (dotimes (_ col-count) (insert " Header |"))
+      (insert "\n|")
+      (dotimes (_ col-count) (insert "--------|"))
+      (insert "\n|")
+      (dotimes (_ col-count) (insert " Data   |"))
+      (insert "\n"))
+    (insert "
+#+BEGIN_EXPORT latex
+\\end{landscape}
+#+END_EXPORT
+
+")))
+
+;; Academic insert menu
+(defun academic-insert ()
+  "Show menu for inserting academic elements."
+  (interactive)
+  (let ((choice (completing-read "Insert: "
+                                 '("figure" "table" "landscape-table")
+                                 nil t)))
+    (pcase choice
+      ("figure" (academic-insert-figure))
+      ("table" (academic-insert-table))
+      ("landscape-table" (academic-insert-landscape-table)))))
+
+;; Keybindings for academic writing
+(global-set-key (kbd "C-c a s") 'academic-set-citation-style)  ; Set citation style
+(global-set-key (kbd "C-c a n") 'academic-new-manuscript)      ; New manuscript from template
+(global-set-key (kbd "C-c a T") 'academic-switch-template)     ; Switch template (preserves content)
+(global-set-key (kbd "C-c a i") 'academic-insert)              ; Insert menu
+(global-set-key (kbd "C-c a f") 'academic-insert-figure)       ; Insert figure
+(global-set-key (kbd "C-c a t") 'academic-insert-table)        ; Insert table
+(global-set-key (kbd "C-c a l") 'academic-insert-landscape-table) ; Insert landscape table
+#+END_SRC
+
+** DONE Bibliography Management with Citar
+
+#+BEGIN_SRC emacs-lisp
+;; Update citar and org-cite bibliography to include local manuscript bib
+(defun academic-update-citar-bibliography ()
+  "Update citar and org-cite bibliography to include local manuscript references."
+  (let ((local-bib (academic-find-manuscript-bib)))
+    (when local-bib
+      (setq-local citar-bibliography (list local-bib))
+      (setq-local org-cite-global-bibliography (list local-bib))
+      (message "Using bibliography: %s" local-bib))))
+
+;; Auto-update when opening org files (before citar loads)
+(add-hook 'org-mode-hook #'academic-update-citar-bibliography)
+
+(use-package citar
+  :ensure t
+  :bind (("C-c b" . citar-insert-citation)
+         :map minibuffer-local-map
+         ("M-b" . citar-insert-preset))
+  :custom
+  (citar-bibliography (list academic-bib-file))
+  :init
+  ;; Set up org-cite integration
+  (setq org-cite-insert-processor 'citar
+        org-cite-follow-processor 'citar
+        org-cite-activate-processor 'citar)
+  :config
+  (setq citar-at-point-function 'embark-act))
+#+END_SRC
+
+** DONE ESS (Emacs Speaks Statistics) for R
+
+#+BEGIN_SRC emacs-lisp
+(use-package ess
+  :ensure t
+  :defer t
+  :mode (("\\.R\\'" . ess-r-mode)
+         ("\\.r\\'" . ess-r-mode))
+  :config
+  (setq ess-style 'RStudio)
+  (setq ess-ask-for-ess-directory nil)
+  ;; Don't replace underscore with assignment
+  (setq ess-smart-S-assign-key nil))
+#+END_SRC
+
+** DONE Polymode for R Markdown
+
+#+BEGIN_SRC emacs-lisp
+(use-package polymode
+  :ensure t)
+
+(use-package poly-R
+  :ensure t
+  :after polymode
+  :mode (("\\.Rmd\\'" . poly-markdown+r-mode)
+         ("\\.rmd\\'" . poly-markdown+r-mode)))
+
+(use-package poly-markdown
+  :ensure t
+  :after polymode)
+#+END_SRC
+
+** DONE Quarto Mode Configuration
+
+#+BEGIN_SRC emacs-lisp
+(use-package quarto-mode
+  :ensure t
+  :mode (("\\.qmd\\'" . quarto-mode)))
+#+END_SRC
+
+** DONE Enhanced Markdown Mode
+
+#+BEGIN_SRC emacs-lisp
+;; Expand existing markdown-mode configuration
+(use-package markdown-mode
+  :ensure t
+  :mode (("README\\.md\\'" . gfm-mode)
+         ("\\.md\\'" . markdown-mode)
+         ("\\.markdown\\'" . markdown-mode))
+  :init
+  (setq markdown-command "pandoc")
+  (setq markdown-enable-math t)
+  (setq markdown-fontify-code-blocks-natively t)
+  :config
+  (setq markdown-enable-wiki-links t)
+  (setq markdown-asymmetric-header t))
+
+(use-package markdown-toc
+  :ensure t
+  :after markdown-mode)
 #+END_SRC
 
 ** DONE Python IDE Setup [1/1]
