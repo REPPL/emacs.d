@@ -1269,12 +1269,18 @@ Only injects if twocolumn-preamble.org is referenced (active or commented SETUPF
               ;; Insert twocolumn content after base preamble or after LATEX_COMPILER
               (goto-char (point-min))
               (let ((insert-point nil))
-                ;; Try to insert after base preamble marker
-                (if (re-search-forward "# Common packages" nil t)
+                ;; Try to insert after base preamble's final \makeatother
+                ;; The base preamble ends with #+LATEX_HEADER: \makeatother
+                (if (re-search-forward "^#\\+LATEX_HEADER: \\\\usepackage\\[utf8\\]{inputenc}" nil t)
                     (progn
-                      (re-search-forward "^#\\+LATEX_HEADER:.*doclicenseLongText" nil t)
-                      (end-of-line)
-                      (setq insert-point (point)))
+                      ;; Find the last \makeatother in the base preamble section
+                      (let ((last-makeatother nil))
+                        (while (re-search-forward "^#\\+LATEX_HEADER: \\\\makeatother" nil t)
+                          (setq last-makeatother (point)))
+                        (when last-makeatother
+                          (goto-char last-makeatother)
+                          (end-of-line)
+                          (setq insert-point (point)))))
                   ;; Fallback: after LATEX_COMPILER
                   (goto-char (point-min))
                   (when (re-search-forward "^#\\+LATEX_COMPILER:.*$" nil t)
