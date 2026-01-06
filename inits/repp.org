@@ -819,15 +819,42 @@ there's a region, all lines that region covers will be duplicated."
 ;; For Org-mode, Markdown, R Markdown with LaTeX/PDF export
 ;; ============================================================
 
-;; Paths
+;; Paths - dynamically derived from current buffer location
+(defun academic-find-manuscripts-root (&optional start-dir)
+  "Find Manuscripts/ root by walking up from START-DIR or current buffer's directory."
+  (let ((dir (or start-dir
+                 (and buffer-file-name (file-name-directory buffer-file-name))
+                 default-directory)))
+    (while (and dir
+                (not (string-match-p "/Manuscripts/$" dir))
+                (not (string= dir "/")))
+      (setq dir (file-name-directory (directory-file-name dir))))
+    (if (and dir (string-match-p "/Manuscripts/$" dir))
+        dir
+      ;; Fallback to default location
+      (expand-file-name "~/Development/Sandboxed/Manuscripts/"))))
+
+(defun academic-get-production-dir ()
+  "Get template directory based on current manuscript location."
+  (concat (academic-find-manuscripts-root) "template/"))
+
+(defun academic-get-csl-styles-dir ()
+  "Get CSL styles directory based on current manuscript location."
+  (concat (academic-get-production-dir) "csl/"))
+
+(defun academic-get-bib-file ()
+  "Get master bibliography file based on current manuscript location."
+  (concat (academic-get-production-dir) "bib/master.bib"))
+
+;; Legacy variables for compatibility (use functions above for dynamic resolution)
 (defvar academic-manuscripts-dir "~/Development/Sandboxed/Manuscripts/"
-  "Root directory for manuscripts repository.")
+  "Default root directory for manuscripts repository. Use `academic-find-manuscripts-root' for dynamic resolution.")
 (defvar academic-production-dir (concat academic-manuscripts-dir "template/")
-  "Template resources directory.")
-(defvar academic-csl-styles-dir (concat academic-production-dir "templates/csl/")
-  "Directory containing CSL style files.")
+  "Default template resources directory. Use `academic-get-production-dir' for dynamic resolution.")
+(defvar academic-csl-styles-dir (concat academic-production-dir "csl/")
+  "Default directory containing CSL style files. Use `academic-get-csl-styles-dir' for dynamic resolution.")
 (defvar academic-bib-file (concat academic-production-dir "bib/master.bib")
-  "Master bibliography file.")
+  "Default master bibliography file. Use `academic-get-bib-file' for dynamic resolution.")
 
 ;; --- LaTeX/PDF Export Configuration ---
 
@@ -908,8 +935,9 @@ there's a region, all lines that region covers will be duplicated."
         '((latex csl)
           (t csl)))
   ;; Global bibliography as fallback
-  (when (file-exists-p academic-bib-file)
-    (setq org-cite-global-bibliography (list academic-bib-file))))
+  (let ((bib-file (academic-get-bib-file)))
+    (when (file-exists-p bib-file)
+      (setq org-cite-global-bibliography (list bib-file)))))
 
 ;; Find manuscript bibliography by searching up directory tree
 (defun academic-find-manuscript-bib (&optional file)
@@ -993,7 +1021,7 @@ BACKEND is the export backend (ignored)."
 
 ;; CSL styles directory
 (with-eval-after-load 'oc-csl
-  (setq org-cite-csl-styles-dir academic-csl-styles-dir)
+  (setq org-cite-csl-styles-dir (academic-get-csl-styles-dir))
   ;; Fix for "Wrong type argument: numberp, nil" error
   (setq org-cite-csl-link-cites nil))
 
@@ -1070,7 +1098,7 @@ Use this to change journal formats while keeping your manuscript content."
                                          nil t))
          (template-file (cdr (assoc template-name academic-templates)))
          (template-path (expand-file-name template-file
-                                          (concat academic-production-dir "templates/org/")))
+                                          (concat (academic-get-production-dir) "templates/org/")))
          template-preamble
          ;; Save current document metadata
          (saved-title nil)
@@ -1139,7 +1167,7 @@ Use this to change journal formats while keeping your manuscript content."
           (when (re-search-forward "^#\\+CITE_EXPORT:[ \t]*csl[ \t]+\\(\\.\\./csl/[^ \t\n]+\\)" nil t)
             (let* ((csl-file (file-name-nondirectory (match-string 1)))
                    (manuscript-dir (file-name-directory buffer-file-name))
-                   (csl-dir (concat academic-production-dir "csl/"))
+                   (csl-dir (academic-get-csl-styles-dir))
                    (rel-path (file-relative-name csl-dir manuscript-dir)))
               (replace-match (concat "#+CITE_EXPORT: csl " rel-path csl-file))))))
       (message "Switched to template: %s (preserved title/author/date/content)" template-name))))
@@ -1147,45 +1175,51 @@ Use this to change journal formats while keeping your manuscript content."
 ;; Keep old name as alias for compatibility
 (defalias 'academic-apply-template 'academic-switch-template)
 
+(defun academic-get-base-preamble-file ()
+  "Get path to base preamble file based on current manuscript location."
+  (concat (academic-get-production-dir) "templates/org/base-preamble.org"))
+
+;; Legacy variable for compatibility
 (defvar academic-base-preamble-file
   (concat academic-production-dir "templates/org/base-preamble.org")
-  "Path to the base preamble file containing common LaTeX headers.")
+  "Default path to base preamble. Use `academic-get-base-preamble-file' for dynamic resolution.")
 
 (defun academic-inject-base-preamble ()
   "Inject base preamble into the current buffer after LATEX_COMPILER line.
 The base preamble contains common packages (booktabs, caption, hyperref, etc.)
 that are shared across all templates."
-  (when (file-exists-p academic-base-preamble-file)
-    (save-excursion
-      (goto-char (point-min))
-      ;; Check if base preamble already injected
-      (unless (re-search-forward "# Common packages" nil t)
-        ;; Find insertion point: after LATEX_COMPILER or before first LATEX_HEADER
+  (let ((preamble-file (academic-get-base-preamble-file)))
+    (when (file-exists-p preamble-file)
+      (save-excursion
         (goto-char (point-min))
-        (let ((insert-point nil)
-              (base-content nil))
-          ;; Read base preamble content (skip comment lines at top)
-          (with-temp-buffer
-            (insert-file-contents academic-base-preamble-file)
-            (goto-char (point-min))
-            ;; Skip initial comment lines
-            (while (and (not (eobp))
-                        (looking-at "^#[^+]"))
-              (forward-line 1))
-            (setq base-content (buffer-substring (point) (point-max))))
-          ;; Find insertion point
+        ;; Check if base preamble already injected
+        (unless (re-search-forward "# Common packages" nil t)
+          ;; Find insertion point: after LATEX_COMPILER or before first LATEX_HEADER
           (goto-char (point-min))
-          (if (re-search-forward "^#\\+LATEX_COMPILER:.*$" nil t)
-              (setq insert-point (point))
-            ;; Fallback: before first LATEX_HEADER
+          (let ((insert-point nil)
+                (base-content nil))
+            ;; Read base preamble content (skip comment lines at top)
+            (with-temp-buffer
+              (insert-file-contents preamble-file)
+              (goto-char (point-min))
+              ;; Skip initial comment lines
+              (while (and (not (eobp))
+                          (looking-at "^#[^+]"))
+                (forward-line 1))
+              (setq base-content (buffer-substring (point) (point-max))))
+            ;; Find insertion point
             (goto-char (point-min))
-            (when (re-search-forward "^#\\+LATEX_HEADER:" nil t)
-              (beginning-of-line)
-              (setq insert-point (point))))
-          ;; Insert base preamble
-          (when (and insert-point base-content)
-            (goto-char insert-point)
-            (insert "\n" base-content)))))))
+            (if (re-search-forward "^#\\+LATEX_COMPILER:.*$" nil t)
+                (setq insert-point (point))
+              ;; Fallback: before first LATEX_HEADER
+              (goto-char (point-min))
+              (when (re-search-forward "^#\\+LATEX_HEADER:" nil t)
+                (beginning-of-line)
+                (setq insert-point (point))))
+            ;; Insert base preamble
+            (when (and insert-point base-content)
+              (goto-char insert-point)
+              (insert "\n" base-content))))))))
 
 (defun academic-new-manuscript ()
   "Create a new manuscript from template in a new buffer."
@@ -1195,7 +1229,7 @@ that are shared across all templates."
                                          nil t))
          (template-file (cdr (assoc template-name academic-templates)))
          (template-path (expand-file-name template-file
-                                          (concat academic-production-dir "templates/org/"))))
+                                          (concat (academic-get-production-dir) "templates/org/"))))
     (if (not (file-exists-p template-path))
         (message "Template not found: %s" template-path)
       (switch-to-buffer (generate-new-buffer "new-manuscript.org"))
@@ -1210,7 +1244,7 @@ that are shared across all templates."
   "Inject base preamble before LaTeX export.
 This allows manuscripts to stay clean while getting common packages at export."
   (when (and (org-export-derived-backend-p backend 'latex)
-             (file-exists-p academic-base-preamble-file))
+             (file-exists-p (academic-get-base-preamble-file)))
     (academic-inject-base-preamble)))
 
 (add-hook 'org-export-before-processing-hook #'academic-export-inject-preamble)
@@ -1416,14 +1450,13 @@ This allows manuscripts to stay clean while getting common packages at export."
   :bind (("C-c b" . citar-insert-citation)
          :map minibuffer-local-map
          ("M-b" . citar-insert-preset))
-  :custom
-  (citar-bibliography (list academic-bib-file))
   :init
   ;; Set up org-cite integration
   (setq org-cite-insert-processor 'citar
         org-cite-follow-processor 'citar
         org-cite-activate-processor 'citar)
   :config
+  (setq citar-bibliography (list (academic-get-bib-file)))
   (setq citar-at-point-function 'embark-act))
 #+END_SRC
 
