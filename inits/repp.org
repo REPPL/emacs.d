@@ -1179,6 +1179,10 @@ Use this to change journal formats while keeping your manuscript content."
   "Get path to base preamble file based on current manuscript location."
   (concat (academic-get-production-dir) "templates/org/base-preamble.org"))
 
+(defun academic-get-twocolumn-preamble-file ()
+  "Get path to twocolumn preamble file based on current manuscript location."
+  (concat (academic-get-production-dir) "templates/org/twocolumn-preamble.org"))
+
 ;; Legacy variable for compatibility
 (defvar academic-base-preamble-file
   (concat academic-production-dir "templates/org/base-preamble.org")
@@ -1221,6 +1225,63 @@ that are shared across all templates."
               (goto-char insert-point)
               (insert "\n" base-content))))))))
 
+(defun academic-inject-twocolumn-preamble ()
+  "Inject twocolumn preamble into the current buffer.
+This handles two-column layout including class options override, geometry,
+headers/footers, and the full-width abstract.
+Only injects if a SETUPFILE referencing twocolumn-preamble.org is found."
+  (let ((preamble-file (academic-get-twocolumn-preamble-file)))
+    (when (file-exists-p preamble-file)
+      (save-excursion
+        (goto-char (point-min))
+        ;; Only inject if document references twocolumn-preamble in SETUPFILE
+        (when (re-search-forward "^#\\+SETUPFILE:.*twocolumn-preamble\\.org" nil t)
+          ;; Check if already injected (look for a unique twocolumn marker)
+          (goto-char (point-min))
+          (unless (re-search-forward "# Two-column layout packages" nil t)
+            (let ((twocolumn-content nil))
+              ;; Read twocolumn preamble content (skip comment lines at top)
+              (with-temp-buffer
+                (insert-file-contents preamble-file)
+                (goto-char (point-min))
+                ;; Skip initial comment lines
+                (while (and (not (eobp))
+                            (looking-at "^#[^+]"))
+                  (forward-line 1))
+                (setq twocolumn-content (buffer-substring (point) (point-max))))
+              ;; Remove the SETUPFILE line since we're injecting directly
+              (goto-char (point-min))
+              (when (re-search-forward "^#\\+SETUPFILE:.*twocolumn-preamble\\.org.*\n?" nil t)
+                (replace-match ""))
+              ;; Override LATEX_CLASS_OPTIONS if present
+              (goto-char (point-min))
+              (if (re-search-forward "^#\\+LATEX_CLASS_OPTIONS:.*$" nil t)
+                  (replace-match "#+LATEX_CLASS_OPTIONS: [10pt,a4paper,twocolumn]")
+                ;; If no class options, add after LATEX_CLASS
+                (goto-char (point-min))
+                (when (re-search-forward "^#\\+LATEX_CLASS:.*$" nil t)
+                  (end-of-line)
+                  (insert "\n#+LATEX_CLASS_OPTIONS: [10pt,a4paper,twocolumn]")))
+              ;; Insert twocolumn content after base preamble or after LATEX_COMPILER
+              (goto-char (point-min))
+              (let ((insert-point nil))
+                ;; Try to insert after base preamble marker
+                (if (re-search-forward "# Common packages" nil t)
+                    (progn
+                      (re-search-forward "^#\\+LATEX_HEADER:.*doclicenseLongText" nil t)
+                      (end-of-line)
+                      (setq insert-point (point)))
+                  ;; Fallback: after LATEX_COMPILER
+                  (goto-char (point-min))
+                  (when (re-search-forward "^#\\+LATEX_COMPILER:.*$" nil t)
+                    (setq insert-point (point))))
+                (when (and insert-point twocolumn-content)
+                  ;; Filter out the CLASS_OPTIONS line from twocolumn content (already handled)
+                  (setq twocolumn-content
+                        (replace-regexp-in-string "^#\\+LATEX_CLASS_OPTIONS:.*\n?" "" twocolumn-content))
+                  (goto-char insert-point)
+                  (insert "\n" twocolumn-content))))))))))
+
 (defun academic-new-manuscript ()
   "Create a new manuscript from template in a new buffer."
   (interactive)
@@ -1239,13 +1300,18 @@ that are shared across all templates."
       (goto-char (point-min))
       (message "Created new manuscript from: %s (save with C-x C-w)" template-name))))
 
-;; Export filter to inject base preamble at export time
+;; Export filter to inject preambles at export time
 (defun academic-export-inject-preamble (backend)
-  "Inject base preamble before LaTeX export.
-This allows manuscripts to stay clean while getting common packages at export."
-  (when (and (org-export-derived-backend-p backend 'latex)
-             (file-exists-p (academic-get-base-preamble-file)))
-    (academic-inject-base-preamble)))
+  "Inject base and twocolumn preambles before LaTeX export.
+This allows manuscripts to stay clean while getting common packages at export.
+Twocolumn preamble is only injected if the document has a SETUPFILE referencing it."
+  (when (org-export-derived-backend-p backend 'latex)
+    ;; Inject base preamble (common packages)
+    (when (file-exists-p (academic-get-base-preamble-file))
+      (academic-inject-base-preamble))
+    ;; Inject twocolumn preamble if referenced
+    (when (file-exists-p (academic-get-twocolumn-preamble-file))
+      (academic-inject-twocolumn-preamble))))
 
 (add-hook 'org-export-before-processing-hook #'academic-export-inject-preamble)
 
