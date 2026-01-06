@@ -2,6 +2,7 @@
 #+AUTHOR: repp.el
 #+STARTUP: showeverything
 #+OPTIONS: toc:nil num:nil todo:nil
+#+PROPERTY: header-args:emacs-lisp :tangle repp.el
 
 Fixed version addressing tree-sitter and other configuration issues.
 
@@ -1300,12 +1301,34 @@ Only injects if a SETUPFILE referencing twocolumn-preamble.org is found."
       (goto-char (point-min))
       (message "Created new manuscript from: %s (save with C-x C-w)" template-name))))
 
-;; Export filter to inject preambles at export time
+;; Resolve CSL paths dynamically at export time
+(defun academic-resolve-csl-path ()
+  "Resolve CSL path in CITE_EXPORT to use dynamically found CSL directory.
+This allows manuscripts to use just the CSL filename and have the path resolved
+based on the Manuscripts/template/csl/ directory location."
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward "^#\\+CITE_EXPORT:[ \t]*csl[ \t]+\\(.*\\)$" nil t)
+      (let* ((csl-spec (match-string 1))
+             ;; Extract just the filename from any path
+             (csl-filename (file-name-nondirectory (string-trim csl-spec)))
+             ;; Get the dynamically resolved CSL directory
+             (csl-dir (academic-get-csl-styles-dir))
+             (full-csl-path (concat csl-dir csl-filename)))
+        ;; Only update if the file exists in our CSL directory
+        (when (file-exists-p full-csl-path)
+          (replace-match (concat "#+CITE_EXPORT: csl " full-csl-path) t t)
+          (message "Resolved CSL path to: %s" full-csl-path))))))
+
+;; Export filter to inject preambles and resolve paths at export time
 (defun academic-export-inject-preamble (backend)
   "Inject base and twocolumn preambles before LaTeX export.
 This allows manuscripts to stay clean while getting common packages at export.
-Twocolumn preamble is only injected if the document has a SETUPFILE referencing it."
+Twocolumn preamble is only injected if the document has a SETUPFILE referencing it.
+Also resolves CSL paths dynamically."
   (when (org-export-derived-backend-p backend 'latex)
+    ;; Resolve CSL path first
+    (academic-resolve-csl-path)
     ;; Inject base preamble (common packages)
     (when (file-exists-p (academic-get-base-preamble-file))
       (academic-inject-base-preamble))
