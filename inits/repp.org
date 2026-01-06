@@ -1230,13 +1230,16 @@ that are shared across all templates."
   "Inject twocolumn preamble into the current buffer.
 This handles two-column layout including class options override, geometry,
 headers/footers, and the full-width abstract.
-Only injects if a SETUPFILE referencing twocolumn-preamble.org is found."
+Only injects if twocolumn-preamble.org is referenced (active or commented SETUPFILE)."
   (let ((preamble-file (academic-get-twocolumn-preamble-file)))
     (when (file-exists-p preamble-file)
       (save-excursion
         (goto-char (point-min))
-        ;; Only inject if document references twocolumn-preamble in SETUPFILE
-        (when (re-search-forward "^#\\+SETUPFILE:.*twocolumn-preamble\\.org" nil t)
+        ;; Detect twocolumn request: active SETUPFILE or comment containing the reference
+        ;; Matches: #+SETUPFILE: twocolumn-preamble.org
+        ;;          # #+SETUPFILE: twocolumn-preamble.org
+        ;;          # Enable twocolumn-preamble.org
+        (when (re-search-forward "twocolumn-preamble\\.org" nil t)
           ;; Check if already injected (look for unique twocolumn marker)
           (goto-char (point-min))
           (unless (re-search-forward "^#\\+LATEX_HEADER: \\\\usepackage{dblfloatfix}" nil t)
@@ -1250,7 +1253,7 @@ Only injects if a SETUPFILE referencing twocolumn-preamble.org is found."
                             (looking-at "^#[^+]"))
                   (forward-line 1))
                 (setq twocolumn-content (buffer-substring (point) (point-max))))
-              ;; Remove the SETUPFILE line since we're injecting directly
+              ;; Remove active SETUPFILE line if present (to avoid Org trying to read it)
               (goto-char (point-min))
               (when (re-search-forward "^#\\+SETUPFILE:.*twocolumn-preamble\\.org.*\n?" nil t)
                 (replace-match ""))
