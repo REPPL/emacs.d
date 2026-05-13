@@ -273,6 +273,41 @@ Returns `ok', `declined', or `quit'."
 (defun ar-setup--brew-available-p ()
   (ar-setup--have-p "brew"))
 
+;; --- Per-category "is anything missing?" predicates ---
+;; These let the wizard auto-skip the outer prompt entirely when a category
+;; has nothing to install. Each predicate returns non-nil if the category
+;; needs user attention (i.e. at least one tool is missing).
+
+(defun ar-setup--need-core-p ()
+  (not (and (ar-setup--have-p "aspell")
+            (ar-setup--have-p "pandoc")
+            (ar-setup--have-p "pipx"))))
+
+(defun ar-setup--need-python-lsp-p ()
+  ;; pyright is intentionally not installed via this wizard (npm policy);
+  ;; only treat pylsp as the indicator.
+  (not (ar-setup--have-p "pylsp")))
+
+(defun ar-setup--need-python-tooling-p ()
+  (not (and (ar-setup--have-p "black")
+            (ar-setup--have-p "isort")
+            (ar-setup--have-p "flake8"))))
+
+(defun ar-setup--need-academic-p ()
+  (not (and (ar-setup--have-p "quarto")
+            (ar-setup--have-p "R")
+            (ar-setup--have-p "texlab"))))
+
+(defun ar-setup--need-treesit-p ()
+  (and (fboundp 'treesit-language-available-p)
+       (not (treesit-language-available-p 'python))))
+
+(defun ar-setup--need-default-venv-p ()
+  (let* ((venv (expand-file-name "default"
+                                 (expand-file-name ar-setup-venv-root)))
+         (pip  (expand-file-name "bin/pip" venv)))
+    (not (file-exists-p pip))))
+
 (defun ar-setup--check-core ()
   "Check core tools: aspell, pandoc, pipx."
   (catch 'quit
@@ -335,11 +370,18 @@ Returns `ok', `declined', or `quit'."
 (defun ar-setup--check-treesit ()
   "Offer to install tree-sitter grammars used by the config.
 Returns `ok' only if all required grammars are present (or were
-successfully installed)."
+successfully installed). Provides a default `treesit-language-source-alist'
+recipe for languages the wizard manages if the user has not configured
+one."
   (catch 'quit
     (unless (fboundp 'treesit-language-available-p)
       (ar-setup--log "[warn] Emacs lacks tree-sitter support; skipping")
       (throw 'quit 'declined))
+    ;; Provide a recipe for python if none is already registered.
+    (unless (assq 'python (and (boundp 'treesit-language-source-alist)
+                               treesit-language-source-alist))
+      (add-to-list 'treesit-language-source-alist
+                   '(python "https://github.com/tree-sitter/tree-sitter-python")))
     (let ((all-present t))
       (dolist (lang '(python))
         (cond
@@ -347,7 +389,7 @@ successfully installed)."
           (ar-setup--log "[ok ] tree-sitter %s already available" lang))
          (t
           (pcase (ar-setup--confirm
-                  (format "Install tree-sitter grammar for %s?" lang))
+                  (format "Install tree-sitter grammar for %s? (clones from GitHub, compiles)" lang))
             ('yes (condition-case err
                       (progn (treesit-install-language-grammar lang)
                              (ar-setup--log "[ok ] tree-sitter %s installed" lang))
@@ -399,13 +441,22 @@ With prefix arg FORCE, run even if the sentinel file exists."
     (ar-setup--wizard-body)))
 
 (defconst ar-setup--steps
-  '(("Core tools (aspell, pandoc, pipx)"       . ar-setup--check-core)
-    ("Python LSP (pylsp)"                       . ar-setup--check-python-lsp)
-    ("Python tooling (black, isort, flake8)"   . ar-setup--check-python-tooling)
-    ("Academic writing (quarto, R, texlab)"    . ar-setup--check-academic)
-    ("Tree-sitter grammars"                     . ar-setup--check-treesit)
-    ("Default Python venv (~/.venvs/default)"  . ar-setup--check-default-venv))
-  "Ordered list of (LABEL . FUNCTION) wizard categories.")
+  '(("Core tools (aspell, pandoc, pipx)"
+     ar-setup--need-core-p           ar-setup--check-core)
+    ("Python LSP (pylsp)"
+     ar-setup--need-python-lsp-p     ar-setup--check-python-lsp)
+    ("Python tooling (black, isort, flake8)"
+     ar-setup--need-python-tooling-p ar-setup--check-python-tooling)
+    ("Academic writing (quarto, R, texlab)"
+     ar-setup--need-academic-p       ar-setup--check-academic)
+    ("Tree-sitter grammars"
+     ar-setup--need-treesit-p        ar-setup--check-treesit)
+    ("Default Python venv (~/.venvs/default)"
+     ar-setup--need-default-venv-p   ar-setup--check-default-venv))
+  "Ordered list of (LABEL PREDICATE FUNCTION) wizard categories.
+PREDICATE returns non-nil when the category needs user attention.
+If PREDICATE returns nil, the category is silently marked `ok' and the
+outer prompt is skipped entirely.")
 
 (defun ar-setup--wizard-body ()
   "Internal body of the wizard. Fully inline: prompts via the minibuffer,
@@ -428,23 +479,36 @@ silently in *ar-setup-log* for inspection via `M-x switch-to-buffer'."
     (dolist (bin '("aspell" "pandoc" "pipx" "pylsp" "pyright-langserver"
                    "black" "isort" "flake8" "quarto" "R" "texlab" "python3"))
       (ar-setup--log "  %s: %s" bin (or (executable-find bin) "(not found)")))
-    (message "Setup wizard: %d categories. y=install/yes, n=skip-for-now, q=quit."
-             (length ar-setup--steps))
-    (let ((results '())
-          (aborted nil))
-      (catch 'abort
-        (dolist (step ar-setup--steps)
-          (let* ((label (car step))
-                 (fn    (cdr step))
-                 (status
-                  (pcase (ar-setup--confirm (format "Setup: %s?" label))
-                    ('yes  (let ((r (funcall fn)))
-                             (when (eq r 'quit) (setq aborted t) (throw 'abort nil))
-                             r))
-                    ('no   (ar-setup--log "[skip] section: %s" label) 'declined)
-                    ('quit (setq aborted t) (throw 'abort nil)))))
-            (push (cons label status) results)
-            (message "  [%s] %s" status label))))
+    ;; Decide upfront which categories need attention; auto-skip the rest.
+    (let* ((all-steps ar-setup--steps)
+           (needed (cl-remove-if-not (lambda (s) (funcall (nth 1 s))) all-steps))
+           (auto-ok (cl-remove-if    (lambda (s) (funcall (nth 1 s))) all-steps)))
+      (dolist (s auto-ok)
+        (ar-setup--log "[ok ] %s — nothing to install" (car s))
+        (message "  [ok] %s" (car s)))
+      (cond
+       ((null needed)
+        (with-temp-buffer (write-file ar-setup-sentinel))
+        (message "Setup: nothing to do — all %d categories already complete."
+                 (length all-steps)))
+       (t
+        (message "Setup wizard: %d categor%s need attention. y=install, n=skip, q=quit."
+                 (length needed) (if (= 1 (length needed)) "y" "ies"))))
+      (let ((results (mapcar (lambda (s) (cons (car s) 'ok)) auto-ok))
+            (aborted nil))
+        (catch 'abort
+          (dolist (step needed)
+            (let* ((label (nth 0 step))
+                   (fn    (nth 2 step))
+                   (status
+                    (pcase (ar-setup--confirm (format "Setup: %s?" label))
+                      ('yes  (let ((r (funcall fn)))
+                               (when (eq r 'quit) (setq aborted t) (throw 'abort nil))
+                               r))
+                      ('no   (ar-setup--log "[skip] section: %s" label) 'declined)
+                      ('quit (setq aborted t) (throw 'abort nil)))))
+              (push (cons label status) results)
+              (message "  [%s] %s" status label))))
       (setq results (nreverse results))
       (let* ((all-ok (and (not aborted)
                           (cl-every (lambda (r) (eq (cdr r) 'ok)) results)))
@@ -459,7 +523,7 @@ silently in *ar-setup-log* for inspection via `M-x switch-to-buffer'."
          (t
           (message "Setup partial: %d pending (%s). Will re-prompt next launch."
                    (length pending)
-                   (mapconcat #'car pending ", "))))))))
+                   (mapconcat #'car pending ", ")))))))))
 
 ;; Auto-launch on first run after Emacs is idle, only if sentinel missing.
 ;; Inline minibuffer prompt (use-dialog-box nil) so the question shows in
