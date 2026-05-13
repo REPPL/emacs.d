@@ -2079,10 +2079,16 @@ and add ~(python-ts-mode)~ to ~auto-mode-alist~ yourself.
 ;; Force matplotlib to use a non-GUI backend in Python subprocesses
 ;; launched from Emacs. The default 'macosx' backend opens a native
 ;; event loop that conflicts with Emacs's NS event loop and crashes
-;; the editor when scripts importing matplotlib are executed via
-;; python-shell-send-buffer / C-c C-c. Agg is headless and safe;
+;; the editor (process vanishes) when scripts importing matplotlib
+;; are executed via run-python / C-c C-p. Agg is headless and safe;
 ;; for plotting use plt.savefig(...) or jupyter inline rendering.
+;;
+;; Belt-and-braces: set both the global Emacs env (inherited by all
+;; subprocesses) AND python.el's per-interpreter env list, in case
+;; one is bypassed.
 (setenv "MPLBACKEND" "Agg")
+(with-eval-after-load 'python
+  (add-to-list 'python-shell-process-environment "MPLBACKEND=Agg"))
 
 ;; Core Python configuration
 (setq python-shell-interpreter "python3"
