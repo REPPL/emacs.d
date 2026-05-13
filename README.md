@@ -50,8 +50,8 @@ When you first start Emacs with this configuration:
 
 3. **Restart Emacs** - After packages install, restart Emacs to ensure everything loads correctly
 
-4. **First-run setup wizard** - On first launch (after restart), an interactive wizard offers to install missing system tools (LSP servers, linters, optional academic stack, tree-sitter grammars, default Python venv). Each step asks y/n; nothing installs without confirmation. Re-run any time with `M-x ar-setup-wizard`.
-   - Security note: the wizard never invokes `npm`. Python LSP is installed via [pipx](https://pipx.pypa.io/) (`pylsp`).
+4. **First-run setup wizard** - On first launch (after restart), an interactive wizard offers to install missing system tools (LSP servers, linters, optional academic stack, default Python venv). Each step asks y/n; nothing installs without confirmation. Re-run any time with `M-x ar-setup-wizard`.
+   - Python LSP is installed via [pipx](https://pipx.pypa.io/) (`pylsp`).
    - The wizard writes `.setup-done` in your Emacs directory once complete; delete that file (or pass `C-u`) to re-run.
 
 ### What Gets Auto-Generated

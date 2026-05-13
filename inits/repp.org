@@ -199,9 +199,9 @@
 * Setup wizard
 
 First-run interactive wizard that detects missing system tools and offers to
-install them. Strictly avoids ~npm~ (security policy). Can be re-invoked any
-time with =M-x ar-setup-wizard=. Sentinel file ~~/.emacs.d/.setup-done~ prevents
-re-prompting on subsequent launches.
+install them. Can be re-invoked any time with =M-x ar-setup-wizard=.
+Sentinel file ~~/.emacs.d/.setup-done~ prevents re-prompting on subsequent
+launches.
 
 #+BEGIN_SRC emacs-lisp
 (defgroup ar-setup nil
@@ -234,9 +234,7 @@ While missing, the wizard auto-prompts on Emacs startup."
 
 (defun ar-setup--run (command)
   "Run COMMAND in a shell, streaming output into the log buffer.
-Returns the exit code. Never invokes npm (guarded)."
-  (when (string-match-p "\\bnpm\\b" command)
-    (error "ar-setup refuses to invoke npm (security policy): %s" command))
+Returns the exit code."
   (ar-setup--log "$ %s" command)
   (let ((exit (call-process-shell-command
                command nil ar-setup--log-buffer t)))
@@ -284,8 +282,6 @@ Returns `ok', `declined', or `quit'."
             (ar-setup--have-p "pipx"))))
 
 (defun ar-setup--need-python-lsp-p ()
-  ;; pyright is intentionally not installed via this wizard (npm policy);
-  ;; only treat pylsp as the indicator.
   (not (ar-setup--have-p "pylsp")))
 
 (defun ar-setup--need-python-tooling-p ()
@@ -325,11 +321,8 @@ Returns `ok', `declined', or `quit'."
     'ok))
 
 (defun ar-setup--check-python-lsp ()
-  "Check Python LSP. Never installs pyright (npm-only). Offers pylsp via pipx."
+  "Check Python LSP. Offers pylsp via pipx."
   (catch 'quit
-    (unless (ar-setup--have-p "pyright-langserver")
-      (ar-setup--log
-       "[note] pyright-langserver not found. Skipping (npm install disabled by policy)."))
     (unless (ar-setup--have-p "pipx")
       (ar-setup--log "[warn] pipx not installed; cannot install pylsp")
       (throw 'quit 'declined))
@@ -482,7 +475,7 @@ silently in *ar-setup-log* for inspection via `M-x switch-to-buffer'."
     (ar-setup--log "exec-path-from-shell-arguments: %S"
                    (and (boundp 'exec-path-from-shell-arguments)
                         exec-path-from-shell-arguments))
-    (dolist (bin '("aspell" "pandoc" "pipx" "pylsp" "pyright-langserver"
+    (dolist (bin '("aspell" "pandoc" "pipx" "pylsp"
                    "black" "isort" "flake8" "quarto" "R" "texlab" "python3"))
       (ar-setup--log "  %s: %s" bin (or (executable-find bin) "(not found)")))
     ;; Decide upfront which categories need attention; auto-skip the rest.
@@ -1994,7 +1987,6 @@ and add ~(python-ts-mode)~ to ~auto-mode-alist~ yourself.
 #+BEGIN_SRC emacs-lisp
 (use-package lsp-mode
   :hook ((python-mode . lsp-deferred)
-         (python-ts-mode . lsp-deferred) ; Support tree-sitter mode too
          (lsp-mode . lsp-enable-which-key-integration))
   :commands (lsp lsp-deferred)
   :init
@@ -2050,19 +2042,10 @@ and add ~(python-ts-mode)~ to ~auto-mode-alist~ yourself.
               ("C-c l ?" . lsp-ui-peek-find-references)
               ("C-c l h" . lsp-ui-doc-show)))
 
-;; TEMPORARILY DISABLED for crash bisection (2026-05-13).
-;; Minimal `emacs -Q' with run-python works fine; with full config
-;; Emacs vanishes on C-c C-p. lsp-pyright is suspect #1 because it
-;; requires + lsp-deferred fires on python-mode entry. If a fresh
-;; restart still crashes with this disabled, the culprit is elsewhere
-;; (next suspects: lsp-mode, dap-mode, jupyter).
-;; (use-package lsp-pyright
-;;   :hook ((python-mode . (lambda ()
-;;                           (require 'lsp-pyright)
-;;                           (lsp-deferred)))
-;;          (python-ts-mode . (lambda ()
-;;                              (require 'lsp-pyright)
-;;                              (lsp-deferred)))))
+;; lsp-pyright intentionally not used. Its python-mode hook caused
+;; GUI Emacs on macOS to vanish on C-c C-p (run-python). Bisection in
+;; commit 47e2437 isolated lsp-pyright as the trigger. Plain lsp-mode
+;; with pylsp (installed via pipx) handles Python LSP without crashing.
 
 (use-package dap-mode
   :if (not (version< emacs-version "27.1"))
@@ -2175,12 +2158,23 @@ and add ~(python-ts-mode)~ to ~auto-mode-alist~ yourself.
          ("C-c C-x" . python-run-buffer-and-show)
          ("C-c C-v" . python-run-region-and-show)
          ("C-c C-z" . python-shell-switch-to-shell)
-         ("C-c C-c" . python-shell-send-buffer)
+         ("C-c C-c" . ar-python-send-buffer-or-start)
          ("C-c C-r" . (lambda ()
                         (interactive)
                         (if (use-region-p)
                             (python-shell-send-region (region-beginning) (region-end))
                           (message "No region selected"))))))
+
+;; Auto-start a Python subprocess if none exists, then send the buffer.
+;; Replaces python-shell-send-buffer on C-c C-c so the "Start a Python
+;; process first with M-x run-python" nag goes away.
+(defun ar-python-send-buffer-or-start ()
+  "Send current buffer to *Python*, starting it first if needed."
+  (interactive)
+  (unless (python-shell-get-process)
+    (save-window-excursion (run-python nil nil t))
+    (sit-for 0.2))
+  (python-shell-send-buffer))
 
 ;; Enhanced pyvenv configuration
 (use-package pyvenv
