@@ -221,7 +221,6 @@ While missing, the wizard auto-prompts on Emacs startup."
   :group 'ar-setup)
 
 (defconst ar-setup--log-buffer "*ar-setup-log*")
-(defconst ar-setup--wizard-buffer "*ar-setup*")
 
 (defun ar-setup--have-p (binary)
   "Return non-nil if BINARY is on PATH."
@@ -398,45 +397,36 @@ With prefix arg FORCE, run even if the sentinel file exists."
   "Ordered list of (LABEL . FUNCTION) wizard categories.")
 
 (defun ar-setup--wizard-body ()
-  "Internal body of the wizard. Forces minibuffer prompts (no GUI dialogs).
+  "Internal body of the wizard. Fully inline: prompts via the minibuffer,
+status messages via `message' (visible in *Messages*). No buffer popups,
+no window splits.
+
 Tracks per-category status; writes the sentinel only if every category
-returned `ok' (i.e. nothing was declined or aborted). On next launch, any
-category not marked `ok' is offered again."
+returned `ok' (i.e. nothing was declined or aborted). On next launch,
+any category not marked `ok' is offered again. Full log preserved
+silently in *ar-setup-log* for inspection via `M-x switch-to-buffer'."
   (let ((use-dialog-box nil)
         (last-nonmenu-event t))
     (with-current-buffer (get-buffer-create ar-setup--log-buffer)
       (erase-buffer)
       (insert (format-time-string "[ar-setup %Y-%m-%d %H:%M:%S]\n")))
-    (with-current-buffer (get-buffer-create ar-setup--wizard-buffer)
-      (let ((inhibit-read-only t))
-        (erase-buffer)
-        (insert "Emacs Setup Wizard\n")
-        (insert "==================\n\n")
-        (insert "Each step is optional. Answer y/n. Press q to quit.\n")
-        (insert "Nothing is installed without your confirmation.\n")
-        (insert "Note: npm is never invoked (security policy).\n\n")
-        (insert (format "Log: %s\n\n" ar-setup--log-buffer))
-        (insert "Categories:\n"))
-      (special-mode))
-    (display-buffer ar-setup--wizard-buffer)
-    (let ((results '())   ; alist: (label . status) where status in (ok declined skipped quit)
+    (message "Setup wizard: %d categories. y=install/yes, n=skip-for-now, q=quit."
+             (length ar-setup--steps))
+    (let ((results '())
           (aborted nil))
       (catch 'abort
         (dolist (step ar-setup--steps)
           (let* ((label (car step))
                  (fn    (cdr step))
                  (status
-                  (pcase (ar-setup--confirm (format "Setup: run %S?" label))
+                  (pcase (ar-setup--confirm (format "Setup: %s?" label))
                     ('yes  (let ((r (funcall fn)))
                              (when (eq r 'quit) (setq aborted t) (throw 'abort nil))
                              r))
                     ('no   (ar-setup--log "[skip] section: %s" label) 'declined)
                     ('quit (setq aborted t) (throw 'abort nil)))))
             (push (cons label status) results)
-            (with-current-buffer ar-setup--wizard-buffer
-              (let ((inhibit-read-only t))
-                (goto-char (point-max))
-                (insert (format "  [%s] %s\n" status label)))))))
+            (message "  [%s] %s" status label))))
       (setq results (nreverse results))
       (let* ((all-ok (and (not aborted)
                           (cl-every (lambda (r) (eq (cdr r) 'ok)) results)))
@@ -446,18 +436,12 @@ category not marked `ok' is offered again."
           (message "Setup wizard aborted. Re-run with M-x ar-setup-wizard."))
          (all-ok
           (with-temp-buffer (write-file ar-setup-sentinel))
-          (message "Setup complete. All categories ok. Log: %s"
-                   ar-setup--log-buffer))
+          (message "Setup complete. All %d categories ok. Log: M-x switch-to-buffer %s"
+                   (length results) ar-setup--log-buffer))
          (t
-          ;; Do NOT write the sentinel. Next launch will re-prompt.
-          (with-current-buffer ar-setup--wizard-buffer
-            (let ((inhibit-read-only t))
-              (goto-char (point-max))
-              (insert "\nPending (will be offered again next launch):\n")
-              (dolist (r pending)
-                (insert (format "  - %s (%s)\n" (car r) (cdr r))))))
-          (message "Setup partial: %d pending. Will re-prompt next launch. Log: %s"
-                   (length pending) ar-setup--log-buffer)))))))
+          (message "Setup partial: %d pending (%s). Will re-prompt next launch."
+                   (length pending)
+                   (mapconcat #'car pending ", "))))))))
 
 ;; Auto-launch on first run after Emacs is idle, only if sentinel missing.
 ;; Inline minibuffer prompt (use-dialog-box nil) so the question shows in
