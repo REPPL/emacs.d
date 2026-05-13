@@ -215,7 +215,8 @@ re-prompting on subsequent launches.
 
 (defcustom ar-setup-sentinel
   (expand-file-name ".setup-done" user-emacs-directory)
-  "File whose existence indicates the setup wizard has run successfully."
+  "File whose existence indicates every wizard category completed successfully.
+While missing, the wizard auto-prompts on Emacs startup."
   :type 'file
   :group 'ar-setup)
 
@@ -244,9 +245,15 @@ Returns the exit code. Never invokes npm (guarded)."
     exit))
 
 (defun ar-setup--confirm (prompt)
-  "Yes/no/skip-all prompt. Returns `yes', `no', or `quit'."
-  (let ((c (read-char-choice (concat prompt " [y/n/q] ") '(?y ?n ?q))))
-    (pcase c (?y 'yes) (?n 'no) (?q 'quit))))
+  "Yes/no/skip-all prompt in the minibuffer (never a GUI dialog).
+Returns `yes', `no', or `quit'. Logs the prompt and the user's answer."
+  (ar-setup--log "? %s" prompt)
+  (let* ((use-dialog-box nil)
+         (last-nonmenu-event t)
+         (c (read-char-choice (concat prompt " [y/n/q] ") '(?y ?n ?q)))
+         (answer (pcase c (?y 'yes) (?n 'no) (?q 'quit))))
+    (ar-setup--log "  -> %s" answer)
+    answer))
 
 (defun ar-setup--step (name check-fn install-cmd)
   "If CHECK-FN returns non-nil, skip NAME. Otherwise prompt and on yes
@@ -381,52 +388,90 @@ With prefix arg FORCE, run even if the sentinel file exists."
                ar-setup-sentinel)
     (ar-setup--wizard-body)))
 
+(defconst ar-setup--steps
+  '(("Core tools (aspell, pandoc, pipx)"       . ar-setup--check-core)
+    ("Python LSP (pylsp)"                       . ar-setup--check-python-lsp)
+    ("Python tooling (black, isort, flake8)"   . ar-setup--check-python-tooling)
+    ("Academic writing (quarto, R, texlab)"    . ar-setup--check-academic)
+    ("Tree-sitter grammars"                     . ar-setup--check-treesit)
+    ("Default Python venv (~/.venvs/default)"  . ar-setup--check-default-venv))
+  "Ordered list of (LABEL . FUNCTION) wizard categories.")
+
 (defun ar-setup--wizard-body ()
-  "Internal body of the wizard. Always runs all steps interactively."
-  (with-current-buffer (get-buffer-create ar-setup--log-buffer)
-    (erase-buffer))
-  (with-current-buffer (get-buffer-create ar-setup--wizard-buffer)
-    (let ((inhibit-read-only t))
+  "Internal body of the wizard. Forces minibuffer prompts (no GUI dialogs).
+Tracks per-category status; writes the sentinel only if every category
+returned `ok' (i.e. nothing was declined or aborted). On next launch, any
+category not marked `ok' is offered again."
+  (let ((use-dialog-box nil)
+        (last-nonmenu-event t))
+    (with-current-buffer (get-buffer-create ar-setup--log-buffer)
       (erase-buffer)
-      (insert "Emacs Setup Wizard\n")
-      (insert "==================\n\n")
-      (insert "Each step is optional. Answer y/n. Press q to quit.\n")
-      (insert "Nothing is installed without your confirmation.\n")
-      (insert "Note: npm is never invoked (security policy).\n\n")
-      (insert (format "Log: %s\n\n" ar-setup--log-buffer)))
-    (special-mode))
-  (display-buffer ar-setup--wizard-buffer)
-  (let ((steps `(("Core tools (aspell, pandoc, pipx)" . ar-setup--check-core)
-                 ("Python LSP (pylsp)"                 . ar-setup--check-python-lsp)
-                 ("Python tooling (black, isort, flake8)" . ar-setup--check-python-tooling)
-                 ("Academic writing (quarto, R, texlab)" . ar-setup--check-academic)
-                 ("Tree-sitter grammars"               . ar-setup--check-treesit)
-                 ("Default Python venv (~/.venvs/default)" . ar-setup--check-default-venv)))
-        (aborted nil))
-    (catch 'abort
-      (dolist (step steps)
-        (let ((label (car step)) (fn (cdr step)))
-          (pcase (ar-setup--confirm (format "\n=== %s ===\nRun this step?" label))
-            ('yes (when (eq 'quit (funcall fn))
-                    (setq aborted t) (throw 'abort nil)))
-            ('no  (ar-setup--log "[skip] section: %s" label))
-            ('quit (setq aborted t) (throw 'abort nil))))))
-    (cond
-     (aborted
-      (message "Setup wizard aborted. Re-run with M-x ar-setup-wizard."))
-     (t
-      (with-temp-buffer (write-file ar-setup-sentinel))
-      (message "Setup complete. See %s for the log." ar-setup--log-buffer)))))
+      (insert (format-time-string "[ar-setup %Y-%m-%d %H:%M:%S]\n")))
+    (with-current-buffer (get-buffer-create ar-setup--wizard-buffer)
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert "Emacs Setup Wizard\n")
+        (insert "==================\n\n")
+        (insert "Each step is optional. Answer y/n. Press q to quit.\n")
+        (insert "Nothing is installed without your confirmation.\n")
+        (insert "Note: npm is never invoked (security policy).\n\n")
+        (insert (format "Log: %s\n\n" ar-setup--log-buffer))
+        (insert "Categories:\n"))
+      (special-mode))
+    (display-buffer ar-setup--wizard-buffer)
+    (let ((results '())   ; alist: (label . status) where status in (ok declined skipped quit)
+          (aborted nil))
+      (catch 'abort
+        (dolist (step ar-setup--steps)
+          (let* ((label (car step))
+                 (fn    (cdr step))
+                 (status
+                  (pcase (ar-setup--confirm (format "Setup: run %S?" label))
+                    ('yes  (let ((r (funcall fn)))
+                             (when (eq r 'quit) (setq aborted t) (throw 'abort nil))
+                             r))
+                    ('no   (ar-setup--log "[skip] section: %s" label) 'declined)
+                    ('quit (setq aborted t) (throw 'abort nil)))))
+            (push (cons label status) results)
+            (with-current-buffer ar-setup--wizard-buffer
+              (let ((inhibit-read-only t))
+                (goto-char (point-max))
+                (insert (format "  [%s] %s\n" status label)))))))
+      (setq results (nreverse results))
+      (let* ((all-ok (and (not aborted)
+                          (cl-every (lambda (r) (eq (cdr r) 'ok)) results)))
+             (pending (cl-remove-if (lambda (r) (eq (cdr r) 'ok)) results)))
+        (cond
+         (aborted
+          (message "Setup wizard aborted. Re-run with M-x ar-setup-wizard."))
+         (all-ok
+          (with-temp-buffer (write-file ar-setup-sentinel))
+          (message "Setup complete. All categories ok. Log: %s"
+                   ar-setup--log-buffer))
+         (t
+          ;; Do NOT write the sentinel. Next launch will re-prompt.
+          (with-current-buffer ar-setup--wizard-buffer
+            (let ((inhibit-read-only t))
+              (goto-char (point-max))
+              (insert "\nPending (will be offered again next launch):\n")
+              (dolist (r pending)
+                (insert (format "  - %s (%s)\n" (car r) (cdr r))))))
+          (message "Setup partial: %d pending. Will re-prompt next launch. Log: %s"
+                   (length pending) ar-setup--log-buffer)))))))
 
 ;; Auto-launch on first run after Emacs is idle, only if sentinel missing.
+;; Inline minibuffer prompt (use-dialog-box nil) so the question shows in
+;; the statusbar, not a native macOS dialog.
 (add-hook 'emacs-startup-hook
           (lambda ()
             (unless (file-exists-p ar-setup-sentinel)
               (run-with-idle-timer
                2 nil
                (lambda ()
-                 (when (y-or-n-p "Run first-run setup wizard now? (also: M-x ar-setup-wizard) ")
-                   (ar-setup-wizard)))))))
+                 (let ((use-dialog-box nil)
+                       (last-nonmenu-event t))
+                   (when (y-or-n-p "Run setup wizard now? (M-x ar-setup-wizard) ")
+                     (ar-setup-wizard))))))))
 #+END_SRC
 
 * Startup [2/2]
