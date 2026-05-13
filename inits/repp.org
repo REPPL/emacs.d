@@ -453,14 +453,16 @@ With prefix arg FORCE, run even if the sentinel file exists."
      ar-setup--need-python-tooling-p ar-setup--check-python-tooling)
     ("Academic writing (quarto, R, texlab)"
      ar-setup--need-academic-p       ar-setup--check-academic)
-    ("Tree-sitter grammars"
-     ar-setup--need-treesit-p        ar-setup--check-treesit)
     ("Default Python venv (~/.venvs/default)"
      ar-setup--need-default-venv-p   ar-setup--check-default-venv))
   "Ordered list of (LABEL PREDICATE FUNCTION) wizard categories.
 PREDICATE returns non-nil when the category needs user attention.
 If PREDICATE returns nil, the category is silently marked `ok' and the
-outer prompt is skipped entirely.")
+outer prompt is skipped entirely.
+
+Tree-sitter grammar installation was removed after an ABI mismatch
+crashed Emacs on opening .py files. Install grammars manually if
+needed.")
 
 (defun ar-setup--wizard-body ()
   "Internal body of the wizard. Fully inline: prompts via the minibuffer,
@@ -1971,36 +1973,20 @@ Also resolves CSL paths dynamically."
 
 ** DONE Python IDE Setup [1/1]
 
-*** DONE Tree-sitter Enhanced Syntax Highlighting
+*** DONE Tree-sitter Enhanced Syntax Highlighting (disabled)
 
-Grammar installation is handled by the setup wizard (see =* Setup wizard=).
-This block just wires up tree-sitter modes when the grammar is present.
+Disabled after a hard Emacs crash opening a Python file with the
+installed grammar. Plain ~python-mode~ (with LSP) is the active path
+for ~.py~ files. To re-enable tree-sitter, install a grammar manually
+and add ~(python-ts-mode)~ to ~auto-mode-alist~ yourself.
 
 #+BEGIN_SRC emacs-lisp
-;; Suppress *Warnings* auto-popup for treesit version-mismatch noise.
-;; The warning still logs (visible via M-x display-warning-message-buffer)
-;; but won't split the window on startup.
+;; Intentionally do NOT wire up python-ts-mode or treesit-auto.
+;; A grammar ABI mismatch with Emacs 30.2's libtree-sitter crashed the
+;; editor when opening .py files. Until a known-good grammar is
+;; confirmed for this Emacs build, .py uses plain python-mode.
 (with-eval-after-load 'warnings
   (add-to-list 'warning-suppress-types '(treesit)))
-
-;; Enable tree-sitter Python mode only when the grammar is actually
-;; available and loadable. If the wizard hasn't installed it yet, or if
-;; there's a version mismatch, fall back to plain python-mode silently.
-(when (and (version<= "29.1" emacs-version)
-           (treesit-available-p)
-           (ignore-errors (treesit-language-available-p 'python)))
-  (use-package treesit-auto
-    :config
-    (setq treesit-auto-install nil) ; never auto-install; wizard owns that
-    (treesit-auto-add-to-auto-mode-alist 'python)
-    (global-treesit-auto-mode))
-  (add-to-list 'auto-mode-alist '("\\.py\\'" . python-ts-mode))
-  (with-eval-after-load 'python-ts-mode
-    (setq python-indent-offset 4)))
-
-;; Fallback message if tree-sitter is not available
-(unless (and (version<= "29.1" emacs-version) (treesit-available-p))
-  (message "Tree-sitter not available in this Emacs version, using standard Python mode"))
 #+END_SRC
 
 *** DONE LSP Mode for Python Development
