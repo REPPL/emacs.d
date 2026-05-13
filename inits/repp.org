@@ -333,50 +333,61 @@ Returns `ok', `declined', or `quit'."
     'ok))
 
 (defun ar-setup--check-treesit ()
-  "Offer to install tree-sitter grammars used by the config."
+  "Offer to install tree-sitter grammars used by the config.
+Returns `ok' only if all required grammars are present (or were
+successfully installed)."
   (catch 'quit
     (unless (fboundp 'treesit-language-available-p)
       (ar-setup--log "[warn] Emacs lacks tree-sitter support; skipping")
       (throw 'quit 'declined))
-    (dolist (lang '(python))
-      (unless (treesit-language-available-p lang)
-        (pcase (ar-setup--confirm
-                (format "Install tree-sitter grammar for %s via treesit-install-language-grammar?"
-                        lang))
-          ('yes (condition-case err
-                    (progn (treesit-install-language-grammar lang)
-                           (ar-setup--log "[ok ] tree-sitter %s installed" lang))
-                  (error (ar-setup--log "[err] %s grammar install failed: %S" lang err))))
-          ('no  (ar-setup--log "[skip] tree-sitter %s declined" lang))
-          ('quit (throw 'quit 'quit)))))
-    'ok))
+    (let ((all-present t))
+      (dolist (lang '(python))
+        (cond
+         ((treesit-language-available-p lang)
+          (ar-setup--log "[ok ] tree-sitter %s already available" lang))
+         (t
+          (pcase (ar-setup--confirm
+                  (format "Install tree-sitter grammar for %s?" lang))
+            ('yes (condition-case err
+                      (progn (treesit-install-language-grammar lang)
+                             (ar-setup--log "[ok ] tree-sitter %s installed" lang))
+                    (error (ar-setup--log "[err] %s grammar install failed: %S" lang err)
+                           (setq all-present nil))))
+            ('no  (ar-setup--log "[skip] tree-sitter %s declined" lang)
+                  (setq all-present nil))
+            ('quit (throw 'quit 'quit))))))
+      (if all-present 'ok 'declined))))
 
 (defun ar-setup--check-default-venv ()
-  "Offer to create a default Python venv under ~ar-setup-venv-root~."
+  "Offer to create a default Python venv under ~ar-setup-venv-root~.
+Returns `ok' if the venv already exists or was successfully created.
+Returns `declined' if user said no or venv creation failed."
   (catch 'quit
     (let* ((root (expand-file-name ar-setup-venv-root))
            (venv (expand-file-name "default" root))
            (pip  (expand-file-name "bin/pip" venv))
            (python (ar-setup--have-p "python3")))
-      (unless python
+      (cond
+       ((not python)
         (ar-setup--log "[warn] python3 not on PATH; cannot create venv")
-        (throw 'quit 'declined))
-      (when (file-exists-p pip)
+        'declined)
+       ((file-exists-p pip)
         (ar-setup--log "[ok ] default venv exists at %s" venv)
-        (throw 'quit 'ok))
-      (pcase (ar-setup--confirm
-              (format "Create default Python venv at %s and install dev tools?" venv))
-        ('yes
-         (unless (file-directory-p root) (make-directory root t))
-         (ar-setup--run (format "%s -m venv %s"
-                                (shell-quote-argument python)
-                                (shell-quote-argument venv)))
-         (ar-setup--run
-          (format "%s install --upgrade pip black isort flake8 'python-lsp-server[all]' ipython"
-                  (shell-quote-argument pip))))
-        ('no   (ar-setup--log "[skip] default venv declined"))
-        ('quit (throw 'quit 'quit))))
-    'ok))
+        'ok)
+       (t
+        (pcase (ar-setup--confirm
+                (format "Create default Python venv at %s and install dev tools?" venv))
+          ('yes
+           (unless (file-directory-p root) (make-directory root t))
+           (let ((rc1 (ar-setup--run (format "%s -m venv %s"
+                                             (shell-quote-argument python)
+                                             (shell-quote-argument venv))))
+                 (rc2 (ar-setup--run
+                       (format "%s install --upgrade pip black isort flake8 'python-lsp-server[all]' ipython"
+                               (shell-quote-argument pip)))))
+             (if (and (zerop rc1) (zerop rc2)) 'ok 'declined)))
+          ('no   (ar-setup--log "[skip] default venv declined") 'declined)
+          ('quit (throw 'quit 'quit))))))))
 
 (defun ar-setup-wizard (&optional force)
   "Run the interactive first-run setup wizard.
@@ -410,6 +421,13 @@ silently in *ar-setup-log* for inspection via `M-x switch-to-buffer'."
     (with-current-buffer (get-buffer-create ar-setup--log-buffer)
       (erase-buffer)
       (insert (format-time-string "[ar-setup %Y-%m-%d %H:%M:%S]\n")))
+    (ar-setup--log "PATH: %s" (getenv "PATH"))
+    (ar-setup--log "exec-path-from-shell-arguments: %S"
+                   (and (boundp 'exec-path-from-shell-arguments)
+                        exec-path-from-shell-arguments))
+    (dolist (bin '("aspell" "pandoc" "pipx" "pylsp" "pyright-langserver"
+                   "black" "isort" "flake8" "quarto" "R" "texlab" "python3"))
+      (ar-setup--log "  %s: %s" bin (or (executable-find bin) "(not found)")))
     (message "Setup wizard: %d categories. y=install/yes, n=skip-for-now, q=quit."
              (length ar-setup--steps))
     (let ((results '())
