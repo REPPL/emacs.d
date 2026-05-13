@@ -196,6 +196,239 @@
       user-mail-address "[email]")
 #+END_SRC
 
+* Setup wizard
+
+First-run interactive wizard that detects missing system tools and offers to
+install them. Strictly avoids ~npm~ (security policy). Can be re-invoked any
+time with =M-x ar-setup-wizard=. Sentinel file ~~/.emacs.d/.setup-done~ prevents
+re-prompting on subsequent launches.
+
+#+BEGIN_SRC emacs-lisp
+(defgroup ar-setup nil
+  "First-run setup wizard for this Emacs configuration."
+  :group 'convenience)
+
+(defcustom ar-setup-venv-root "~/.venvs/"
+  "Root directory for Python virtual environments managed by the wizard."
+  :type 'directory
+  :group 'ar-setup)
+
+(defcustom ar-setup-sentinel
+  (expand-file-name ".setup-done" user-emacs-directory)
+  "File whose existence indicates the setup wizard has run successfully."
+  :type 'file
+  :group 'ar-setup)
+
+(defconst ar-setup--log-buffer "*ar-setup-log*")
+(defconst ar-setup--wizard-buffer "*ar-setup*")
+
+(defun ar-setup--have-p (binary)
+  "Return non-nil if BINARY is on PATH."
+  (executable-find binary))
+
+(defun ar-setup--log (fmt &rest args)
+  "Append a formatted line to the setup log buffer."
+  (with-current-buffer (get-buffer-create ar-setup--log-buffer)
+    (goto-char (point-max))
+    (insert (apply #'format fmt args) "\n")))
+
+(defun ar-setup--run (command)
+  "Run COMMAND in a shell, streaming output into the log buffer.
+Returns the exit code. Never invokes npm (guarded)."
+  (when (string-match-p "\\bnpm\\b" command)
+    (error "ar-setup refuses to invoke npm (security policy): %s" command))
+  (ar-setup--log "$ %s" command)
+  (let ((exit (call-process-shell-command
+               command nil ar-setup--log-buffer t)))
+    (ar-setup--log "[exit %d]" exit)
+    exit))
+
+(defun ar-setup--confirm (prompt)
+  "Yes/no/skip-all prompt. Returns `yes', `no', or `quit'."
+  (let ((c (read-char-choice (concat prompt " [y/n/q] ") '(?y ?n ?q))))
+    (pcase c (?y 'yes) (?n 'no) (?q 'quit))))
+
+(defun ar-setup--step (name check-fn install-cmd)
+  "If CHECK-FN returns non-nil, skip NAME. Otherwise prompt and on yes
+run INSTALL-CMD (a shell string).
+Returns `ok', `declined', or `quit'."
+  (cond
+   ((funcall check-fn)
+    (ar-setup--log "[ok ] %s already installed" name)
+    'ok)
+   (t
+    (ar-setup--log "[miss] %s not found" name)
+    (pcase (ar-setup--confirm
+            (format "Install %s? Will run:\n    %s\n" name install-cmd))
+      ('yes  (if (zerop (ar-setup--run install-cmd)) 'ok 'declined))
+      ('no   (ar-setup--log "[skip] %s declined by user" name) 'declined)
+      ('quit 'quit)))))
+
+(defun ar-setup--brew-available-p ()
+  (ar-setup--have-p "brew"))
+
+(defun ar-setup--check-core ()
+  "Check core tools: aspell, pandoc, pipx."
+  (catch 'quit
+    (unless (ar-setup--brew-available-p)
+      (ar-setup--log "[warn] Homebrew not found; skipping brew-managed tools")
+      (throw 'quit 'declined))
+    (dolist (pkg '(("aspell" . "brew install aspell")
+                   ("pandoc" . "brew install pandoc")
+                   ("pipx"   . "brew install pipx")))
+      (let ((bin (car pkg)) (cmd (cdr pkg)))
+        (when (eq 'quit (ar-setup--step bin
+                                        (lambda () (ar-setup--have-p bin))
+                                        cmd))
+          (throw 'quit 'quit))))
+    'ok))
+
+(defun ar-setup--check-python-lsp ()
+  "Check Python LSP. Never installs pyright (npm-only). Offers pylsp via pipx."
+  (catch 'quit
+    (unless (ar-setup--have-p "pyright-langserver")
+      (ar-setup--log
+       "[note] pyright-langserver not found. Skipping (npm install disabled by policy)."))
+    (unless (ar-setup--have-p "pipx")
+      (ar-setup--log "[warn] pipx not installed; cannot install pylsp")
+      (throw 'quit 'declined))
+    (ar-setup--step "python-lsp-server (pylsp)"
+                    (lambda () (ar-setup--have-p "pylsp"))
+                    "pipx install 'python-lsp-server[all]'")))
+
+(defun ar-setup--check-python-tooling ()
+  "Check global Python dev tools via pipx."
+  (catch 'quit
+    (unless (ar-setup--have-p "pipx")
+      (ar-setup--log "[warn] pipx not installed; cannot install Python tooling")
+      (throw 'quit 'declined))
+    (dolist (tool '("black" "isort" "flake8"))
+      (when (eq 'quit (ar-setup--step
+                       tool
+                       (lambda () (ar-setup--have-p tool))
+                       (format "pipx install %s" tool)))
+        (throw 'quit 'quit)))
+    'ok))
+
+(defun ar-setup--check-academic ()
+  "Check academic writing stack: quarto, R, texlab."
+  (catch 'quit
+    (unless (ar-setup--brew-available-p)
+      (ar-setup--log "[warn] Homebrew not found; cannot install academic stack")
+      (throw 'quit 'declined))
+    (dolist (pkg '(("quarto" . "brew install --cask quarto")
+                   ("R"      . "brew install r")
+                   ("texlab" . "brew install texlab")))
+      (let ((bin (car pkg)) (cmd (cdr pkg)))
+        (when (eq 'quit (ar-setup--step bin
+                                        (lambda () (ar-setup--have-p bin))
+                                        cmd))
+          (throw 'quit 'quit))))
+    'ok))
+
+(defun ar-setup--check-treesit ()
+  "Offer to install tree-sitter grammars used by the config."
+  (catch 'quit
+    (unless (fboundp 'treesit-language-available-p)
+      (ar-setup--log "[warn] Emacs lacks tree-sitter support; skipping")
+      (throw 'quit 'declined))
+    (dolist (lang '(python))
+      (unless (treesit-language-available-p lang)
+        (pcase (ar-setup--confirm
+                (format "Install tree-sitter grammar for %s via treesit-install-language-grammar?"
+                        lang))
+          ('yes (condition-case err
+                    (progn (treesit-install-language-grammar lang)
+                           (ar-setup--log "[ok ] tree-sitter %s installed" lang))
+                  (error (ar-setup--log "[err] %s grammar install failed: %S" lang err))))
+          ('no  (ar-setup--log "[skip] tree-sitter %s declined" lang))
+          ('quit (throw 'quit 'quit)))))
+    'ok))
+
+(defun ar-setup--check-default-venv ()
+  "Offer to create a default Python venv under ~ar-setup-venv-root~."
+  (catch 'quit
+    (let* ((root (expand-file-name ar-setup-venv-root))
+           (venv (expand-file-name "default" root))
+           (pip  (expand-file-name "bin/pip" venv))
+           (python (ar-setup--have-p "python3")))
+      (unless python
+        (ar-setup--log "[warn] python3 not on PATH; cannot create venv")
+        (throw 'quit 'declined))
+      (when (file-exists-p pip)
+        (ar-setup--log "[ok ] default venv exists at %s" venv)
+        (throw 'quit 'ok))
+      (pcase (ar-setup--confirm
+              (format "Create default Python venv at %s and install dev tools?" venv))
+        ('yes
+         (unless (file-directory-p root) (make-directory root t))
+         (ar-setup--run (format "%s -m venv %s"
+                                (shell-quote-argument python)
+                                (shell-quote-argument venv)))
+         (ar-setup--run
+          (format "%s install --upgrade pip black isort flake8 'python-lsp-server[all]' ipython"
+                  (shell-quote-argument pip))))
+        ('no   (ar-setup--log "[skip] default venv declined"))
+        ('quit (throw 'quit 'quit))))
+    'ok))
+
+(defun ar-setup-wizard (&optional force)
+  "Run the interactive first-run setup wizard.
+With prefix arg FORCE, run even if the sentinel file exists."
+  (interactive "P")
+  (if (and (not force) (file-exists-p ar-setup-sentinel))
+      (message "Setup already complete (%s). Use C-u M-x ar-setup-wizard to re-run."
+               ar-setup-sentinel)
+    (ar-setup--wizard-body)))
+
+(defun ar-setup--wizard-body ()
+  "Internal body of the wizard. Always runs all steps interactively."
+  (with-current-buffer (get-buffer-create ar-setup--log-buffer)
+    (erase-buffer))
+  (with-current-buffer (get-buffer-create ar-setup--wizard-buffer)
+    (let ((inhibit-read-only t))
+      (erase-buffer)
+      (insert "Emacs Setup Wizard\n")
+      (insert "==================\n\n")
+      (insert "Each step is optional. Answer y/n. Press q to quit.\n")
+      (insert "Nothing is installed without your confirmation.\n")
+      (insert "Note: npm is never invoked (security policy).\n\n")
+      (insert (format "Log: %s\n\n" ar-setup--log-buffer)))
+    (special-mode))
+  (display-buffer ar-setup--wizard-buffer)
+  (let ((steps `(("Core tools (aspell, pandoc, pipx)" . ar-setup--check-core)
+                 ("Python LSP (pylsp)"                 . ar-setup--check-python-lsp)
+                 ("Python tooling (black, isort, flake8)" . ar-setup--check-python-tooling)
+                 ("Academic writing (quarto, R, texlab)" . ar-setup--check-academic)
+                 ("Tree-sitter grammars"               . ar-setup--check-treesit)
+                 ("Default Python venv (~/.venvs/default)" . ar-setup--check-default-venv)))
+        (aborted nil))
+    (catch 'abort
+      (dolist (step steps)
+        (let ((label (car step)) (fn (cdr step)))
+          (pcase (ar-setup--confirm (format "\n=== %s ===\nRun this step?" label))
+            ('yes (when (eq 'quit (funcall fn))
+                    (setq aborted t) (throw 'abort nil)))
+            ('no  (ar-setup--log "[skip] section: %s" label))
+            ('quit (setq aborted t) (throw 'abort nil))))))
+    (cond
+     (aborted
+      (message "Setup wizard aborted. Re-run with M-x ar-setup-wizard."))
+     (t
+      (with-temp-buffer (write-file ar-setup-sentinel))
+      (message "Setup complete. See %s for the log." ar-setup--log-buffer)))))
+
+;; Auto-launch on first run after Emacs is idle, only if sentinel missing.
+(add-hook 'emacs-startup-hook
+          (lambda ()
+            (unless (file-exists-p ar-setup-sentinel)
+              (run-with-idle-timer
+               2 nil
+               (lambda ()
+                 (when (y-or-n-p "Run first-run setup wizard now? (also: M-x ar-setup-wizard) ")
+                   (ar-setup-wizard)))))))
+#+END_SRC
+
 * Startup [2/2]
 
 ** DONE Scratch message
