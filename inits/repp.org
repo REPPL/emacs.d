@@ -1,10 +1,8 @@
-#+TITLE: My personal Emacs configuration (FIXED)
+#+TITLE: My personal Emacs configuration
 #+AUTHOR: repp.el
 #+STARTUP: showeverything
 #+OPTIONS: toc:nil num:nil todo:nil
 #+PROPERTY: header-args:emacs-lisp :tangle repp.el
-
-Fixed version addressing tree-sitter and other configuration issues.
 
 * Performance optimisations
 
@@ -652,13 +650,12 @@ Fixed version addressing tree-sitter and other configuration issues.
          ("M-S M-G" . highlight-symbol-remove-all)))
 #+END_SRC
 
-*** DONE Ace Jump - FIXED KEYBINDING CONFLICT
+*** DONE Ace Jump
 
 #+BEGIN_SRC emacs-lisp
-;; Changed keybinding to avoid conflict with jupyter
 (use-package ace-jump-mode
   :if (window-system)
-  :bind (("C-c SPC" . ace-jump-char-mode)))  ; Changed from C-c j to C-c SPC
+  :bind (("C-c SPC" . ace-jump-char-mode)))
 #+END_SRC
 
 ** DONE On-the-fly checking
@@ -1622,11 +1619,11 @@ Also resolves CSL paths dynamically."
 
 ** DONE Python IDE Setup [1/1]
 
-*** DONE FIXED Tree-sitter Enhanced Syntax Highlighting
+*** DONE Tree-sitter Enhanced Syntax Highlighting
 
 #+BEGIN_SRC emacs-lisp
-;; FIXED: Manual tree-sitter grammar installation and setup
-;; This addresses the "language grammar for python is unavailable" error
+;; Manual tree-sitter grammar installation and setup
+;; Addresses the "language grammar for python is unavailable" error
 
 (defun install-treesit-grammar-python ()
   "Install Python tree-sitter grammar manually."
@@ -1872,10 +1869,10 @@ Also resolves CSL paths dynamically."
          ("C-c t p" . python-pytest-popup)))
 #+END_SRC
 
-*** DONE FIXED Jupyter Integration
+*** DONE Jupyter Integration
 
 #+BEGIN_SRC emacs-lisp
-;; Jupyter notebook support with FIXED keybindings
+;; Jupyter notebook support
 (use-package jupyter
   :config
   (setq jupyter-eval-use-overlays t

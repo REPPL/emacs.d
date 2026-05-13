@@ -69,7 +69,6 @@ The essential files you need are:
 - `init.el` - Main initialisation file
 - `inits/custom.el` - Custom variables
 - `inits/repp.org` - Main configuration (loaded via org-babel)
-- `snippets/` - YASnippet templates (optional)
 
 ## Troubleshooting
 
