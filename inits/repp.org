@@ -378,10 +378,14 @@ one."
       (ar-setup--log "[warn] Emacs lacks tree-sitter support; skipping")
       (throw 'quit 'declined))
     ;; Provide a recipe for python if none is already registered.
+    ;; Pinned to v0.21.0 (tree-sitter ABI 14) for compatibility with the
+    ;; libtree-sitter shipped in Emacs 30.x. master uses ABI 15 which
+    ;; triggers a version-mismatch warning and disables highlighting.
     (unless (assq 'python (and (boundp 'treesit-language-source-alist)
                                treesit-language-source-alist))
       (add-to-list 'treesit-language-source-alist
-                   '(python "https://github.com/tree-sitter/tree-sitter-python")))
+                   '(python "https://github.com/tree-sitter/tree-sitter-python"
+                            "v0.21.0")))
     (let ((all-present t))
       (dolist (lang '(python))
         (cond
@@ -1969,44 +1973,30 @@ Also resolves CSL paths dynamically."
 
 *** DONE Tree-sitter Enhanced Syntax Highlighting
 
+Grammar installation is handled by the setup wizard (see =* Setup wizard=).
+This block just wires up tree-sitter modes when the grammar is present.
+
 #+BEGIN_SRC emacs-lisp
-;; Manual tree-sitter grammar installation and setup
-;; Addresses the "language grammar for python is unavailable" error
+;; Suppress *Warnings* auto-popup for treesit version-mismatch noise.
+;; The warning still logs (visible via M-x display-warning-message-buffer)
+;; but won't split the window on startup.
+(with-eval-after-load 'warnings
+  (add-to-list 'warning-suppress-types '(treesit)))
 
-(defun install-treesit-grammar-python ()
-  "Install Python tree-sitter grammar manually."
-  (interactive)
-  (unless (treesit-language-available-p 'python)
-    (message "Installing Python tree-sitter grammar...")
-    (let ((treesit-grammar-dir (expand-file-name "tree-sitter" user-emacs-directory)))
-      (unless (file-directory-p treesit-grammar-dir)
-        (make-directory treesit-grammar-dir t))
-      ;; Try to compile the grammar
-      (condition-case err
-          (treesit-install-language-grammar 'python 
-            "https://github.com/tree-sitter/tree-sitter-python")
-        (error (message "Failed to install Python grammar: %s" err))))))
-
-;; Only enable tree-sitter if Python grammar is available or can be installed
-(when (and (version<= "29.1" emacs-version) ; Tree-sitter requires Emacs 29+
-           (treesit-available-p))
-  
-  ;; Try to install Python grammar if not available
-  (unless (treesit-language-available-p 'python)
-    (install-treesit-grammar-python))
-  
-  ;; Only enable if grammar is now available
-  (when (treesit-language-available-p 'python)
-    (use-package treesit-auto
-      :config
-      (setq treesit-auto-install nil) ; Don't auto-install to avoid errors
-      (treesit-auto-add-to-auto-mode-alist 'python)
-      (global-treesit-auto-mode))
-    
-    ;; Use tree-sitter Python mode when grammar is available
-    (add-to-list 'auto-mode-alist '("\\.py\\'" . python-ts-mode))
-    (with-eval-after-load 'python-ts-mode
-      (setq python-indent-offset 4))))
+;; Enable tree-sitter Python mode only when the grammar is actually
+;; available and loadable. If the wizard hasn't installed it yet, or if
+;; there's a version mismatch, fall back to plain python-mode silently.
+(when (and (version<= "29.1" emacs-version)
+           (treesit-available-p)
+           (ignore-errors (treesit-language-available-p 'python)))
+  (use-package treesit-auto
+    :config
+    (setq treesit-auto-install nil) ; never auto-install; wizard owns that
+    (treesit-auto-add-to-auto-mode-alist 'python)
+    (global-treesit-auto-mode))
+  (add-to-list 'auto-mode-alist '("\\.py\\'" . python-ts-mode))
+  (with-eval-after-load 'python-ts-mode
+    (setq python-indent-offset 4)))
 
 ;; Fallback message if tree-sitter is not available
 (unless (and (version<= "29.1" emacs-version) (treesit-available-p))
