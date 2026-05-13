@@ -2076,6 +2076,14 @@ and add ~(python-ts-mode)~ to ~auto-mode-alist~ yourself.
 *** DONE Python Virtual Environment Management
 
 #+BEGIN_SRC emacs-lisp
+;; Force matplotlib to use a non-GUI backend in Python subprocesses
+;; launched from Emacs. The default 'macosx' backend opens a native
+;; event loop that conflicts with Emacs's NS event loop and crashes
+;; the editor when scripts importing matplotlib are executed via
+;; python-shell-send-buffer / C-c C-c. Agg is headless and safe;
+;; for plotting use plt.savefig(...) or jupyter inline rendering.
+(setenv "MPLBACKEND" "Agg")
+
 ;; Core Python configuration
 (setq python-shell-interpreter "python3"
       python-shell-interpreter-args "-i")
