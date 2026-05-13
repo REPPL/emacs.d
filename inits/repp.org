@@ -2050,13 +2050,19 @@ and add ~(python-ts-mode)~ to ~auto-mode-alist~ yourself.
               ("C-c l ?" . lsp-ui-peek-find-references)
               ("C-c l h" . lsp-ui-doc-show)))
 
-(use-package lsp-pyright
-  :hook ((python-mode . (lambda ()
-                          (require 'lsp-pyright)
-                          (lsp-deferred)))
-         (python-ts-mode . (lambda ()
-                             (require 'lsp-pyright)
-                             (lsp-deferred)))))
+;; TEMPORARILY DISABLED for crash bisection (2026-05-13).
+;; Minimal `emacs -Q' with run-python works fine; with full config
+;; Emacs vanishes on C-c C-p. lsp-pyright is suspect #1 because it
+;; requires + lsp-deferred fires on python-mode entry. If a fresh
+;; restart still crashes with this disabled, the culprit is elsewhere
+;; (next suspects: lsp-mode, dap-mode, jupyter).
+;; (use-package lsp-pyright
+;;   :hook ((python-mode . (lambda ()
+;;                           (require 'lsp-pyright)
+;;                           (lsp-deferred)))
+;;          (python-ts-mode . (lambda ()
+;;                              (require 'lsp-pyright)
+;;                              (lsp-deferred)))))
 
 (use-package dap-mode
   :if (not (version< emacs-version "27.1"))
