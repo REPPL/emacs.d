@@ -38,26 +38,33 @@ if ! command -v emacs >/dev/null 2>&1; then
 fi
 
 if [ -e "$TARGET" ]; then
-  # Already a clone of this configuration: offer to update in place.
-  if [ -d "$TARGET/.git" ] &&
-     git -C "$TARGET" remote get-url origin 2>/dev/null | grep -q 'REPPL/emacs.d'; then
-    case "$(ask "$TARGET already holds this configuration. Update it (git pull)? [y/N] ")" in
-      y | Y) git -C "$TARGET" pull --ff-only; say "Updated."; exit 0 ;;
-      *)     say "Cancelled; nothing changed."; exit 0 ;;
-    esac
-  fi
+  # Already a clone of this configuration: offer to update in place. Match
+  # the origin URL exactly (anchored), not by substring, so a lookalike
+  # remote is not mistaken for this repo.
+  origin_url=""
+  [ -d "$TARGET/.git" ] && origin_url=$(git -C "$TARGET" remote get-url origin 2>/dev/null || true)
+  case "$origin_url" in
+    https://github.com/REPPL/emacs.d | https://github.com/REPPL/emacs.d.git | \
+      git@github.com:REPPL/emacs.d | git@github.com:REPPL/emacs.d.git)
+      case "$(ask "$TARGET already holds this configuration. Update it (git pull)? [y/N] ")" in
+        y | Y) git -C "$TARGET" pull --ff-only; say "Updated."; exit 0 ;;
+        *)     say "Cancelled; nothing changed."; exit 0 ;;
+      esac
+      ;;
+  esac
   # Some other existing configuration: back it up or cancel. Never delete.
   case "$(ask "$TARGET already exists. Move it aside and install? [y/N] ")" in
     y | Y)
       backup="$TARGET.backup-$(date +%Y%m%d-%H%M%S)"
-      mv "$TARGET" "$backup"
+      [ -e "$backup" ] && backup="$backup-$$"
+      mv -- "$TARGET" "$backup"
       say "Backed up existing configuration to $backup"
       ;;
     *) say "Cancelled; nothing changed."; exit 0 ;;
   esac
 fi
 
-git clone "$REPO_URL" "$TARGET"
+git clone -- "$REPO_URL" "$TARGET"
 
 say ""
 say "Installed to $TARGET"
