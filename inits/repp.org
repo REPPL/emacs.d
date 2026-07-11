@@ -1148,7 +1148,17 @@ there's a region, all lines that region covers will be duplicated."
   (setq markdown-fontify-code-blocks-natively t)
   :config
   (setq markdown-enable-wiki-links t)
-  (setq markdown-asymmetric-header t))
+  (setq markdown-asymmetric-header t)
+  :bind (:map markdown-mode-map
+              ;; Org-style structure editing: move/promote/demote the
+              ;; heading (or list item) at point. Mirrors org's
+              ;; M-<up>/<down> (org-metaup/down) and M-<left>/<right>
+              ;; (org-metaleft/right). Heading *navigation* (TAB fold,
+              ;; C-c C-n/p/f/b/u) is already provided by markdown-mode.
+              ("M-<up>"    . markdown-move-up)
+              ("M-<down>"  . markdown-move-down)
+              ("M-<left>"  . markdown-promote)
+              ("M-<right>" . markdown-demote)))
 
 (use-package markdown-toc
   :ensure t
