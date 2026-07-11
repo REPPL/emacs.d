@@ -35,7 +35,7 @@ A fast, focused Emacs configuration for macOS. The configuration is written as a
 curl -fsSL https://raw.githubusercontent.com/REPPL/emacs.d/main/install.sh | bash
 ```
 
-This clones the configuration into `~/.emacs.d` as a git repository, so you can pull updates and commit your own changes. If `~/.emacs.d` already exists you are asked what to do first — nothing is deleted without your consent (an existing configuration is moved to `~/.emacs.d.backup-<timestamp>`; if `~/.emacs.d` is already this configuration, you are offered a `git pull` instead). To install somewhere else, set `EMACS_D`:
+This clones the configuration into `~/.emacs.d` as a git repository, so you can pull updates and commit your own changes. If `~/.emacs.d` already exists you are asked what to do first — nothing is deleted without your consent (an existing configuration is moved to `~/.emacs.d.backup-<timestamp>`; if `~/.emacs.d` is already this configuration, you are offered a `git pull` instead). After cloning, it offers to install any missing optional tools below (pandoc, aspell, pipx and the Python language server), each with its own y/N prompt. To install somewhere else, set `EMACS_D`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/REPPL/emacs.d/main/install.sh | EMACS_D=~/my-emacs bash
