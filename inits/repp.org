@@ -69,9 +69,9 @@
 
 ;; Better error handling for packages
 (setq use-package-always-ensure t
-      use-package-verbose t
+      use-package-verbose nil
       use-package-expand-minimally t
-      use-package-compute-statistics t)
+      use-package-compute-statistics nil)
 
 ;; Package installation verification
 (defun ensure-package-installed (package)
@@ -656,7 +656,9 @@ silently in *ar-setup-log* for inspection via `M-x switch-to-buffer'."
   ;; up (without this, only ~/.zprofile/~/.zshenv are read and tools under
   ;; ~/.local/bin etc. are invisible to GUI Emacs).
   (setq exec-path-from-shell-arguments '("-l" "-i"))
-  (exec-path-from-shell-copy-env "PYTHONPATH")
+  ;; Import PYTHONPATH alongside PATH in a single shell invocation
+  ;; (previously copy-env + initialize spawned two shells).
+  (add-to-list 'exec-path-from-shell-variables "PYTHONPATH")
   (exec-path-from-shell-initialize))
 #+END_SRC
 
@@ -673,7 +675,10 @@ silently in *ar-setup-log* for inspection via `M-x switch-to-buffer'."
 *** DONE Synonyms
 
 #+BEGIN_SRC emacs-lisp
-(use-package powerthesaurus)
+(use-package powerthesaurus
+  ;; Lazy: only needed on M-5 (bound globally); autoload on first use.
+  :defer t
+  :commands (powerthesaurus-lookup-dwim))
 #+END_SRC
 
 ** DONE Misc [6/6]
@@ -792,7 +797,7 @@ silently in *ar-setup-log* for inspection via `M-x switch-to-buffer'."
 ;; Current line
 (custom-set-faces
  '(highlight
-   ((t (:foreground nil :background "#2a2a4a")))))
+   ((t (:foreground unspecified :background "#2a2a4a")))))
 #+END_SRC
 
 **** DONE Update org code block background
@@ -819,8 +824,11 @@ silently in *ar-setup-log* for inspection via `M-x switch-to-buffer'."
 **** DONE Overwrite org statistics colours
 
 #+BEGIN_SRC emacs-lisp
-(set-face-attribute `org-checkbox-statistics-done nil :box nil)
-(set-face-attribute `org-checkbox-statistics-todo nil :box nil)
+;; These faces only exist once Org is loaded. Defer until then so
+;; startup no longer needs Org loaded just to tweak them.
+(with-eval-after-load 'org
+  (set-face-attribute 'org-checkbox-statistics-done nil :box nil)
+  (set-face-attribute 'org-checkbox-statistics-todo nil :box nil))
 #+END_SRC
 
 **** DONE Overwrite text colours
@@ -1037,13 +1045,6 @@ there's a region, all lines that region covers will be duplicated."
 *** DONE File tree navigation
 
 #+BEGIN_SRC emacs-lisp
-(use-package neotree
-  :config
-  (global-set-key [f8] 'neotree-toggle)
-  (setq neo-theme (if (display-graphic-p) 'icons 'arrow)
-        neo-smart-open t
-        neo-auto-indent-point t))
-
 ;; Better dired with built-in enhancements
 (use-package dired
   :ensure nil  ; built-in
@@ -1117,6 +1118,10 @@ there's a region, all lines that region covers will be duplicated."
 
 #+BEGIN_SRC emacs-lisp
 (use-package org
+  ;; Defer: Org is built-in and auto-activates for .org files via
+  ;; auto-mode-alist. Without :defer, use-package would require all of
+  ;; Org at startup just to apply these settings.
+  :defer t
   :config
   (setq org-startup-indented t
         org-pretty-entities t
@@ -1129,6 +1134,13 @@ there's a region, all lines that region covers will be duplicated."
 
 (use-package org-bullets
   :hook (org-mode . org-bullets-mode))
+
+;; Citation rendering for org export. Org's built-in CSL processor
+;; (oc-csl) requires citeproc on demand when a document contains
+;; [cite:...]. Declared here so it stays installed; deferred so it
+;; loads only at export time, never at startup.
+(use-package citeproc
+  :defer t)
 #+END_SRC
 
 ** DONE Enhanced Markdown Mode
@@ -1528,37 +1540,28 @@ and add ~(python-ts-mode)~ to ~auto-mode-alist~ yourself.
 
 #+BEGIN_SRC emacs-lisp
 (use-package yasnippet
+  ;; Lazy: activates per-mode via the hooks below; snippets load
+  ;; just-in-time. No global mode or eager yas-reload-all at startup.
   :hook ((text-mode
           markdown-mode
           python-mode
           org-mode) . yas-minor-mode-on)
   :init
-  (setq yas-snippet-dir "~/.emacs.d/snippets")
-  :config
-  (yas-global-mode 1)
-  ;; Add error handling for snippet collection loading
-  (condition-case err
-      (yas-reload-all)
-    (error (message "Warning: Some snippets failed to load: %s" err))))
+  (setq yas-snippet-dir "~/.emacs.d/snippets"))
 
 (use-package python-docstring
   :hook (python-mode . python-docstring-mode))
-#+END_SRC
-
-*** DONE Markdown
-
-#+BEGIN_SRC emacs-lisp
-(use-package markdown-mode
-  :mode ("README\\.[rR]md\\'" . gfm-mode)
-  :init (setq markdown-command "multimarkdown"))
 #+END_SRC
 
 *** DONE Enhanced Project Navigation
 
 #+BEGIN_SRC emacs-lisp
 (use-package neotree
+  ;; Lazy: the toggle command autoloads neotree on first press, so the
+  ;; package no longer loads at startup.
+  :bind (([f8]  . neotree-toggle)
+         ("M-0" . neotree-toggle))
   :config
-  (global-set-key [f8] 'neotree-toggle)
   (setq neo-theme (if (display-graphic-p) 'icons 'arrow)
         neo-smart-open t
         neo-auto-indent-point t))
@@ -1575,5 +1578,4 @@ and add ~(python-ts-mode)~ to ~auto-mode-alist~ yourself.
       (select-window win))))
 
 (global-set-key (kbd "C-x t t") 'dired-sidebar)
-(global-set-key (kbd "M-0") 'neotree-toggle)
 #+END_SRC
