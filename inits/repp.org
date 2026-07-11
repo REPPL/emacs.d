@@ -1188,63 +1188,129 @@ there's a region, all lines that region covers will be duplicated."
 
 A transient dispatcher on ~C-c C-e~ — mirroring ~org-export-dispatch~ —
 that exports the current Markdown file to HTML, PDF, Org, ASCII or Word
-through pandoc. Everything is deferred until markdown-mode loads, so it
-adds nothing to startup. PDF additionally needs a LaTeX engine (for
-example BasicTeX or MacTeX).
+through pandoc. It is *extensible*: other tools can register their own
+export target with ~ar-markdown-register-exporter~ and it appears in the
+same menu (see [[*Extending the export menu][Extending the export menu]]).
+Everything is deferred until markdown-mode loads, so it adds nothing to
+startup. PDF additionally needs a LaTeX engine (for example BasicTeX or
+MacTeX).
 
 #+BEGIN_SRC emacs-lisp
-;; Make the transient-define-prefix macro available when this file is
-;; byte-compiled; transient itself is required lazily at runtime below.
-(eval-when-compile (require 'transient))
+;; --- registry (available before markdown-mode loads) --------------------
+;; Extra export targets, so other tools can plug into the same menu.
+(defvar ar-markdown-export-extra-targets nil
+  "Extra targets shown in `ar-markdown-export-dispatch'.
+Each entry is (KEY LABEL COMMAND): KEY a transient key string, LABEL its
+menu description, and COMMAND an interactive function that exports the
+current buffer.  Register with `ar-markdown-register-exporter'.")
 
+(defun ar-markdown-register-exporter (key label command)
+  "Add export target (KEY LABEL COMMAND) to the Markdown export menu.
+COMMAND is an interactive function that exports the current buffer.
+Calling again with the same KEY replaces the earlier entry.  Safe to call
+before markdown-mode loads (e.g. from your init or a project's setup)."
+  (setq ar-markdown-export-extra-targets
+        (cons (list key label command)
+              (assoc-delete-all key ar-markdown-export-extra-targets)))
+  ar-markdown-export-extra-targets)
+
+;; --- building blocks -----------------------------------------------------
+(defun ar-markdown--prepare ()
+  "Ensure the current buffer is a saved file and return its path."
+  (unless (buffer-file-name)
+    (user-error "Save this buffer to a file before exporting"))
+  (save-buffer)
+  (buffer-file-name))
+
+(defun ar-markdown--run (program args success-msg)
+  "Run PROGRAM with ARGS; show SUCCESS-MSG on success, else the log buffer."
+  (let ((log (get-buffer-create "*markdown-export*")))
+    (with-current-buffer log (erase-buffer))
+    (if (eq 0 (apply #'call-process program nil log nil args))
+        (message "%s" success-msg)
+      (display-buffer log)
+      (user-error "%s failed (see *markdown-export*)" program))))
+
+(defun ar-markdown--export (label extension &rest pandoc-args)
+  "Export the current buffer to EXTENSION via pandoc (LABEL names it).
+PANDOC-ARGS are extra pandoc flags; the output is written next to the
+source file."
+  (unless (executable-find "pandoc")
+    (user-error "pandoc is not installed (the installer offers to install it)"))
+  (let* ((src (ar-markdown--prepare))
+         (out (concat (file-name-sans-extension src) "." extension)))
+    (ar-markdown--run "pandoc" (append (list src "-o" out) pandoc-args)
+                      (format "%s exported to %s" label (file-name-nondirectory out)))))
+
+(defun ar-markdown-run-external (program &rest args)
+  "Run PROGRAM with ARGS on the current Markdown file, saved first.
+The file path is appended as the final argument and output goes to
+*markdown-export*.  A convenience for registering external exporters,
+such as a project's article builder:
+
+  (ar-markdown-register-exporter
+   \"g\" \"Academic article (Go)\"
+   (lambda () (interactive) (ar-markdown-run-external \"my-article-tool\" \"build\")))"
+  (unless (executable-find program)
+    (user-error "%s is not installed or not on PATH" program))
+  (let ((src (ar-markdown--prepare)))
+    (ar-markdown--run program (append args (list src))
+                      (format "Exported with %s" program))))
+
+(defun ar-markdown-export-html ()
+  "Export the current Markdown buffer to standalone HTML."
+  (interactive) (ar-markdown--export "HTML" "html" "--standalone"))
+(defun ar-markdown-export-pdf ()
+  "Export the current Markdown buffer to PDF (needs a LaTeX engine)."
+  (interactive) (ar-markdown--export "PDF" "pdf"))
+(defun ar-markdown-export-org ()
+  "Export the current Markdown buffer to Org."
+  (interactive) (ar-markdown--export "Org" "org"))
+(defun ar-markdown-export-ascii ()
+  "Export the current Markdown buffer to plain-text ASCII."
+  (interactive) (ar-markdown--export "ASCII" "txt" "-t" "plain"))
+(defun ar-markdown-export-docx ()
+  "Export the current Markdown buffer to Word (.docx)."
+  (interactive) (ar-markdown--export "Word" "docx"))
+
+(defun ar-markdown--extra-suffixes (_children)
+  "Build transient suffixes from `ar-markdown-export-extra-targets'."
+  (transient-parse-suffixes 'ar-markdown-export-dispatch
+                            ar-markdown-export-extra-targets))
+
+;; --- the menu itself (needs transient + markdown-mode-map, so deferred) --
+(eval-when-compile (require 'transient))
 (with-eval-after-load 'markdown-mode
   (require 'transient)
-
-  (defun ar-markdown--export (label extension &rest pandoc-args)
-    "Export the current Markdown buffer to EXTENSION via pandoc.
-LABEL names the format in messages; PANDOC-ARGS are extra pandoc flags.
-The output file is written next to the source."
-    (unless (buffer-file-name)
-      (user-error "Save this buffer to a file before exporting"))
-    (unless (executable-find "pandoc")
-      (user-error "pandoc is not installed (the installer offers to install it)"))
-    (save-buffer)
-    (let* ((src (buffer-file-name))
-           (out (concat (file-name-sans-extension src) "." extension))
-           (log (get-buffer-create "*markdown-export*"))
-           (args (append (list src "-o" out) pandoc-args)))
-      (with-current-buffer log (erase-buffer))
-      (if (eq 0 (apply #'call-process "pandoc" nil log nil args))
-          (message "%s exported to %s" label (file-name-nondirectory out))
-        (display-buffer log)
-        (user-error "pandoc failed exporting %s (see *markdown-export*)" label))))
-
-  (defun ar-markdown-export-html ()
-    "Export the current Markdown buffer to standalone HTML."
-    (interactive) (ar-markdown--export "HTML" "html" "--standalone"))
-  (defun ar-markdown-export-pdf ()
-    "Export the current Markdown buffer to PDF (needs a LaTeX engine)."
-    (interactive) (ar-markdown--export "PDF" "pdf"))
-  (defun ar-markdown-export-org ()
-    "Export the current Markdown buffer to Org."
-    (interactive) (ar-markdown--export "Org" "org"))
-  (defun ar-markdown-export-ascii ()
-    "Export the current Markdown buffer to plain-text ASCII."
-    (interactive) (ar-markdown--export "ASCII" "txt" "-t" "plain"))
-  (defun ar-markdown-export-docx ()
-    "Export the current Markdown buffer to Word (.docx)."
-    (interactive) (ar-markdown--export "Word" "docx"))
-
   (transient-define-prefix ar-markdown-export-dispatch ()
-    "Export the current Markdown buffer with pandoc."
+    "Export the current Markdown buffer (pandoc, plus any registered tools)."
     ["Export Markdown"
      [("h" "HTML"         ar-markdown-export-html)
       ("p" "PDF"          ar-markdown-export-pdf)
       ("o" "Org"          ar-markdown-export-org)]
      [("a" "ASCII (text)" ar-markdown-export-ascii)
-      ("d" "Word (.docx)" ar-markdown-export-docx)]])
-
+      ("d" "Word (.docx)" ar-markdown-export-docx)]]
+    ["Registered exporters"
+     :if (lambda () ar-markdown-export-extra-targets)
+     :setup-children ar-markdown--extra-suffixes])
   (define-key markdown-mode-map (kbd "C-c C-e") #'ar-markdown-export-dispatch))
+#+END_SRC
+
+**** Extending the export menu
+
+To plug an external tool — for example a Go module that renders academic
+articles — into the ~C-c C-e~ menu, register an exporter. The command runs
+in the Markdown buffer; ~ar-markdown-run-external~ saves the file and passes
+its path as the final argument. Put this in your own config, or in the
+project's setup so it only applies there:
+
+#+BEGIN_SRC emacs-lisp :tangle no
+(ar-markdown-register-exporter
+ "g" "Academic article (Go)"
+ (lambda ()
+   (interactive)
+   ;; runs:  my-article-tool build <current-file>
+   (ar-markdown-run-external "my-article-tool" "build")))
 #+END_SRC
 
 ** DONE Python IDE Setup [1/1]
