@@ -656,8 +656,11 @@ silently in *ar-setup-log* for inspection via `M-x switch-to-buffer'."
   ;; up (without this, only ~/.zprofile/~/.zshenv are read and tools under
   ;; ~/.local/bin etc. are invisible to GUI Emacs).
   (setq exec-path-from-shell-arguments '("-l" "-i"))
+  :config
   ;; Import PYTHONPATH alongside PATH in a single shell invocation
-  ;; (previously copy-env + initialize spawned two shells).
+  ;; (previously copy-env + initialize spawned two shells). This lives in
+  ;; :config so the package — and its exec-path-from-shell-variables
+  ;; defcustom — is loaded before we push onto that list.
   (add-to-list 'exec-path-from-shell-variables "PYTHONPATH")
   (exec-path-from-shell-initialize))
 #+END_SRC
