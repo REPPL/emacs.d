@@ -63,15 +63,19 @@
 (let* ((conf-org (expand-file-name "inits/repp.org" user-emacs-directory))
        (conf-el  (expand-file-name "inits/repp.el"  user-emacs-directory))
        (conf-elc (concat conf-el "c")))
-  ;; Re-tangle only when the Org source is newer than the tangled .el.
-  (when (or (not (file-exists-p conf-el))
-            (file-newer-than-file-p conf-org conf-el))
-    (require 'org)
-    (org-babel-tangle-file conf-org conf-el "emacs-lisp\\|elisp"))
-  ;; Byte-compile only when the .el is newer than the .elc. On failure,
-  ;; drop any partial .elc so the load below cleanly falls back to source.
+  ;; (Re)tangle and byte-compile only when the compiled artifact is
+  ;; missing or older than the Org source. Gating on the .elc — the file
+  ;; actually loaded — is what makes this robust: git checkouts bump
+  ;; repp.org's mtime, and org-babel-tangle-file leaves repp.el's mtime
+  ;; untouched when the content is unchanged, so gating on repp.el would
+  ;; re-tangle (and load Org) on every launch and never settle. Org is
+  ;; pulled in only on this path; a normal launch skips it entirely.
   (when (or (not (file-exists-p conf-elc))
-            (file-newer-than-file-p conf-el conf-elc))
+            (file-newer-than-file-p conf-org conf-elc))
+    (require 'org)
+    (org-babel-tangle-file conf-org conf-el "emacs-lisp\\|elisp")
+    ;; On compile failure, drop any partial .elc so the load below cleanly
+    ;; falls back to the .el source.
     (let ((byte-compile-warnings nil))
       (condition-case err
           (byte-compile-file conf-el)
@@ -79,7 +83,7 @@
          (when (file-exists-p conf-elc) (delete-file conf-elc))
          (message "repp: byte-compile failed (%s); loading source" err)))))
   ;; Load the compiled config. load-prefer-newer is still nil here, so
-  ;; the .elc wins; if compilation was skipped it falls back to the .el.
+  ;; the .elc wins; if compilation failed it falls back to the .el.
   (load (file-name-sans-extension conf-el) nil t))
 
 (setq gc-cons-threshold 800000)
