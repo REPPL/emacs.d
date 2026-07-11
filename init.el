@@ -53,7 +53,33 @@
 (when (file-exists-p custom-file)
   (load custom-file))
 
-;; Load the config
-(org-babel-load-file (expand-file-name "inits/repp.org" user-emacs-directory))
+;; Load the config.
+;;
+;; On a normal launch this just loads the byte-compiled inits/repp.el —
+;; Org is NOT loaded at startup. Org is pulled in only to re-tangle when
+;; inits/repp.org has actually changed; the tangled output is then
+;; byte-compiled (and native-comp JITs it to .eln in the background), so
+;; subsequent launches load fast without touching Org or the tangler.
+(let* ((conf-org (expand-file-name "inits/repp.org" user-emacs-directory))
+       (conf-el  (expand-file-name "inits/repp.el"  user-emacs-directory))
+       (conf-elc (concat conf-el "c")))
+  ;; Re-tangle only when the Org source is newer than the tangled .el.
+  (when (or (not (file-exists-p conf-el))
+            (file-newer-than-file-p conf-org conf-el))
+    (require 'org)
+    (org-babel-tangle-file conf-org conf-el "emacs-lisp\\|elisp"))
+  ;; Byte-compile only when the .el is newer than the .elc. On failure,
+  ;; drop any partial .elc so the load below cleanly falls back to source.
+  (when (or (not (file-exists-p conf-elc))
+            (file-newer-than-file-p conf-el conf-elc))
+    (let ((byte-compile-warnings nil))
+      (condition-case err
+          (byte-compile-file conf-el)
+        (error
+         (when (file-exists-p conf-elc) (delete-file conf-elc))
+         (message "repp: byte-compile failed (%s); loading source" err)))))
+  ;; Load the compiled config. load-prefer-newer is still nil here, so
+  ;; the .elc wins; if compilation was skipped it falls back to the .el.
+  (load (file-name-sans-extension conf-el) nil t))
 
 (setq gc-cons-threshold 800000)
