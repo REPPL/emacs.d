@@ -67,6 +67,12 @@
 (eval-when-compile
   (require 'use-package))
 
+;; Load bind-key at runtime before any bind-key/bind-keys* form runs.
+;; When this config is byte-compiled, the bind-keys* expansion is frozen
+;; into the .elc and references `override-global-map' before bind-key is
+;; pulled in; requiring it here removes that load-order dependency.
+(require 'bind-key)
+
 ;; Better error handling for packages
 (setq use-package-always-ensure t
       use-package-verbose nil
