@@ -4,6 +4,7 @@
 # Allow specific files and directories
 !.gitignore
 !init.el
+!install.sh
 !README.md
 !LICENSE
 
