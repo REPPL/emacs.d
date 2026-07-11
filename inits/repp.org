@@ -501,19 +501,17 @@ silently in *ar-setup-log* for inspection via `M-x switch-to-buffer'."
                    (length pending)
                    (mapconcat #'car pending ", ")))))))))
 
-;; Auto-launch on first run after Emacs is idle, only if sentinel missing.
-;; Inline minibuffer prompt (use-dialog-box nil) so the question shows in
-;; the statusbar, not a native macOS dialog.
+;; The wizard is opt-in: never auto-prompt. If setup has not been
+;; completed (sentinel missing), just print a passive one-line note in
+;; the echo area pointing at `M-x ar-setup-wizard'. Runs after startup
+;; settles so the note is not overwritten by other startup messages.
 (add-hook 'emacs-startup-hook
           (lambda ()
             (unless (file-exists-p ar-setup-sentinel)
               (run-with-idle-timer
-               2 nil
+               1 nil
                (lambda ()
-                 (let ((use-dialog-box nil)
-                       (last-nonmenu-event t))
-                   (when (y-or-n-p "Run setup wizard now? (M-x ar-setup-wizard) ")
-                     (ar-setup-wizard))))))))
+                 (message "Tip: optional tooling setup available via M-x ar-setup-wizard"))))))
 #+END_SRC
 
 * Startup [2/2]
