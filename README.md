@@ -10,7 +10,18 @@ A fast, focused Emacs configuration for macOS. The configuration is written as a
 
 ![](./docs/img/screenshot.png)
 
-## What's inside
+## One-line install *(recommended)*
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/REPPL/emacs.d/main/install.sh | bash
+```
+
+This clones the configuration into `~/.emacs.d` as a git repository, so you can pull updates and commit your own changes. If `~/.emacs.d` already exists you are asked what to do first — nothing is deleted without your consent (an existing configuration is moved to `~/.emacs.d.backup-<timestamp>`; if `~/.emacs.d` is already this configuration, you are offered a `git pull` instead). After cloning, it offers to install any missing optional tools below (pandoc, aspell, pipx and the Python language server), each with its own y/N prompt.
+
+![](./docs/img/quote.png)
+
+
+## What you get
 
 - **Fast startup** — the config is byte-compiled and loaded directly; Org itself loads lazily (only when you open an `.org` file), and heavy packages are deferred until first use.
 - **Modern completion** — Vertico, Consult, Marginalia and Orderless in the minibuffer; Company for in-buffer completion.
@@ -27,21 +38,18 @@ A fast, focused Emacs configuration for macOS. The configuration is written as a
 - **macOS** — the configuration and its Mac-specific keybindings are developed and tested there
 - Optional: **pandoc** (Markdown export), **aspell** (spell-checking), **pipx** (Python LSP)
 
-## Installation
 
-### One-line install (recommended)
+# Installation
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/REPPL/emacs.d/main/install.sh | bash
-```
+## Choose installation location
 
-This clones the configuration into `~/.emacs.d` as a git repository, so you can pull updates and commit your own changes. If `~/.emacs.d` already exists you are asked what to do first — nothing is deleted without your consent (an existing configuration is moved to `~/.emacs.d.backup-<timestamp>`; if `~/.emacs.d` is already this configuration, you are offered a `git pull` instead). After cloning, it offers to install any missing optional tools below (pandoc, aspell, pipx and the Python language server), each with its own y/N prompt. To install somewhere else, set `EMACS_D`:
+ To install somewhere other than the `.emacs.d` default location, set `EMACS_D`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/REPPL/emacs.d/main/install.sh | EMACS_D=~/my-emacs bash
 ```
 
-### Manual install
+## Manual install
 
 ```bash
 # Back up any existing configuration first
@@ -60,6 +68,7 @@ When you first start Emacs with this configuration:
 3. **Restart Emacs** — after packages install, restart once so everything loads cleanly.
 4. **Optional setup wizard** — the editor works out of the box. If some optional system tools are missing, a single passive note points you at `M-x ar-setup-wizard`; it never blocks startup. The wizard installs missing tools (Python LSP via [pipx](https://pipx.pypa.io/), linters, a default Python venv), asking y/n for each — nothing installs without confirmation. It writes `.setup-done` in your Emacs directory once every category is complete; delete that file (or run with `C-u`) to re-run.
 
+
 ## Configuration
 
 The configuration lives in three files:
@@ -67,6 +76,7 @@ The configuration lives in three files:
 - `init.el` — startup: sets up packages, then tangles, byte-compiles and loads the config
 - `inits/repp.org` — the literate configuration; **edit this**, and it is re-tangled on the next launch
 - `inits/custom.el` — variables and faces managed by `M-x customize`
+
 
 ## Auto-generated files
 
@@ -77,6 +87,7 @@ These are created automatically and are not committed:
 - `inits/repp.el` and `inits/repp.elc` — tangled and byte-compiled from `repp.org`
 - `auto-save-list/`, `recentf`, `projectile-bookmarks.eld`, `.lsp-session-v1` — session and runtime data
 - `tramp`, `transient/`, `eshell/`, `tree-sitter/` — runtime data
+
 
 ## Troubleshooting
 
