@@ -73,11 +73,21 @@
 ;; pulled in; requiring it here removes that load-order dependency.
 (require 'bind-key)
 
-;; Better error handling for packages
-(setq use-package-always-ensure t
-      use-package-verbose nil
-      use-package-expand-minimally t
-      use-package-compute-statistics nil)
+;; Better error handling for packages.
+;;
+;; This MUST take effect at macro-expansion (byte-compile) time, not just at
+;; load time. init.el byte-compiles this config on first launch, and
+;; `use-package-always-ensure' is read when each `use-package' form expands.
+;; A plain top-level `setq' is compiled but not evaluated during compilation,
+;; so the variable would still be nil while the forms expand and no package
+;; would be installed (only forms with a literal `:ensure t' would). Wrapping
+;; the setting in `eval-and-compile' sets it during compilation as well, so
+;; every `use-package' form gets the ensure handler and installs its package.
+(eval-and-compile
+  (setq use-package-always-ensure t
+        use-package-verbose nil
+        use-package-expand-minimally t
+        use-package-compute-statistics nil))
 
 ;; Package installation verification
 (defun ensure-package-installed (package)
