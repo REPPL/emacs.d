@@ -125,6 +125,13 @@
   :type 'string
   :group 'appearance)
 
+(defun ar-icon-fonts-installed-p ()
+  "Non-nil when the fonts `all-the-icons' draws with are installed.
+Without them every icon renders as a hex box (e.g. F016), so callers
+fall back to plain text."
+  (and (display-graphic-p)
+       (member "all-the-icons" (font-family-list))))
+
 (defcustom ar-font-size 240
   "Default font size."
   :type 'integer
@@ -309,6 +316,10 @@ Returns `ok', `declined', or `quit'."
   (and (fboundp 'treesit-language-available-p)
        (not (treesit-language-available-p 'python))))
 
+(defun ar-setup--need-icon-fonts-p ()
+  (and (display-graphic-p)
+       (not (ar-icon-fonts-installed-p))))
+
 (defun ar-setup--need-default-venv-p ()
   (let* ((venv (expand-file-name "default"
                                  (expand-file-name ar-setup-venv-root)))
@@ -392,6 +403,22 @@ one."
             ('quit (throw 'quit 'quit))))))
       (if all-present 'ok 'declined))))
 
+(defun ar-setup--check-icon-fonts ()
+  "Offer to download the `all-the-icons' fonts (from GitHub).
+They take effect after restarting Emacs."
+  (catch 'quit
+    (pcase (ar-setup--confirm
+            "Download the all-the-icons fonts to ~/Library/Fonts? (restart Emacs afterwards)")
+      ('yes (condition-case err
+                (progn (require 'all-the-icons)
+                       (all-the-icons-install-fonts t)
+                       (ar-setup--log "[ok ] all-the-icons fonts installed")
+                       'ok)
+              (error (ar-setup--log "[err] icon font install failed: %S" err)
+                     'declined)))
+      ('no   (ar-setup--log "[skip] icon fonts declined") 'declined)
+      ('quit (throw 'quit 'quit)))))
+
 (defun ar-setup--check-default-venv ()
   "Offer to create a default Python venv under ~ar-setup-venv-root~.
 Returns `ok' if the venv already exists or was successfully created.
@@ -440,7 +467,9 @@ With prefix arg FORCE, run even if the sentinel file exists."
     ("Python tooling (black, isort, flake8)"
      ar-setup--need-python-tooling-p ar-setup--check-python-tooling)
     ("Default Python venv (~/.venvs/default)"
-     ar-setup--need-default-venv-p   ar-setup--check-default-venv))
+     ar-setup--need-default-venv-p   ar-setup--check-default-venv)
+    ("Icon fonts (all-the-icons)"
+     ar-setup--need-icon-fonts-p     ar-setup--check-icon-fonts))
   "Ordered list of (LABEL PREDICATE FUNCTION) wizard categories.
 PREDICATE returns non-nil when the category needs user attention.
 If PREDICATE returns nil, the category is silently marked `ok' and the
@@ -1085,9 +1114,16 @@ there's a region, all lines that region covers will be duplicated."
   (setq dired-omit-files "^\\.[^.]\\|^#\\|~$")
   (add-hook 'dired-mode-hook 'dired-omit-mode))
 
+;; Icon set used by dired and neotree. Installed in any GUI session so
+;; the setup wizard can fetch its fonts; icons are shown only once the
+;; fonts are present.
+(use-package all-the-icons
+  :if (display-graphic-p)
+  :defer t)
+
 ;; Optional: Enhanced dired with icons
 (use-package all-the-icons-dired
-  :if (display-graphic-p)
+  :if (ar-icon-fonts-installed-p)
   :hook (dired-mode . all-the-icons-dired-mode))
 #+END_SRC
 
@@ -1709,10 +1745,22 @@ and add ~(python-ts-mode)~ to ~auto-mode-alist~ yourself.
   ;; package no longer loads at startup.
   :bind (([f8]  . neotree-toggle)
          ("M-0" . neotree-toggle))
+  ;; `global-visual-line-mode' would otherwise wrap long file names onto
+  ;; a second line; truncate them instead, as neotree intends.
+  :hook (neotree-mode . ar-neotree--no-wrap)
   :config
-  (setq neo-theme (if (display-graphic-p) 'icons 'arrow)
+  ;; Icons need the all-the-icons fonts; without them they render as
+  ;; hex boxes, so use arrows until the fonts are installed.
+  (setq neo-theme (if (ar-icon-fonts-installed-p) 'icons 'arrow)
         neo-smart-open t
-        neo-auto-indent-point t))
+        neo-auto-indent-point t)
+  (when (and (display-graphic-p) (not (ar-icon-fonts-installed-p)))
+    (message "NeoTree: icon fonts missing, using arrows. M-x all-the-icons-install-fonts, then restart.")))
+
+(defun ar-neotree--no-wrap ()
+  "Truncate rather than wrap lines in the NeoTree buffer."
+  (visual-line-mode -1)
+  (setq truncate-lines t))
 
 (defun dired-sidebar ()
   "Open dired in a side window for project navigation."

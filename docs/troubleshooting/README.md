@@ -41,3 +41,7 @@ This means `automake` is missing. If you don't have sudo access to install via H
    ```
 
 Now `aclocal` should be available for Emacs compilation.
+
+## NeoTree shows arrows, or icons appear as boxes such as `F016`
+
+NeoTree and dired draw their icons with the `all-the-icons` fonts. Until those fonts are installed, NeoTree uses plain arrows and dired shows no icons. To install them, run `M-x all-the-icons-install-fonts` (or the "Icon fonts" step of `M-x ar-setup-wizard`), then restart Emacs.
